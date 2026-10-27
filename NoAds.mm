@@ -427,14 +427,21 @@ static NSString *NAStr(id item, NSString *key) {
 
 static BOOL NAIsPromoComponent(id item) {
     if (!item) return NO;
-    NSString *joined = [NSString stringWithFormat:@"%@ %@ %@ %@ %@ %@",
+    NSMutableString *joined = [NSMutableString stringWithFormat:@"%@ %@ %@ %@ %@ %@",
         NAStr(item, @"type"), NAStr(item, @"typeCategory"), NAStr(item, @"desc"),
         NAStr(item, @"id"), NAStr(item, @"name"), NAStr(item, @"title")];
+    if ([item isKindOfClass:[NSDictionary class]]) {
+        for (id v in [(NSDictionary *)item allValues]) {
+            if ([v isKindOfClass:[NSString class]]) [joined appendFormat:@" %@", v];
+        }
+    }
     NSString *s = joined.lowercaseString;
     static NSString *keys[] = {
         @"bigsale", @"banner", @"market", @"promotion", @"promoted",
         @"advert", @"operation", @"tool", @"工具", @"推广",
-        @"钱包", @"亲情网", @"wallet", @"qinqing", @"familynet", nil
+        @"钱包", @"亲情网", @"wallet", @"qinqing", @"familynet",
+        @"gdFamilyNet".lowercaseString, @"familyLifeData".lowercaseString,
+        @"essentialTool".lowercaseString, @"familyAccountRights".lowercaseString, nil
     };
     for (int i = 0; keys[i]; i++) if ([s containsString:keys[i]]) return YES;
     return NO;
@@ -674,6 +681,11 @@ static void NAPatchContainers(void) {
 
     NAAddHideClass("HYLaunchAdView");
     NAAddHideClass("HYLaunchAdForPadView");
+    NAAddHideClass("HYAFServicesCardView");
+    NAAddHideClass("HYMyInfoGDFamilyNetComponent");
+    NAAddHideClass("HYMyInfoFamilyLifeDataCardsView");
+    NAAddHideClass("HYMyInfoEssentialToolComponent");
+    NAAddHideClass("HYMyInfoFamilyAccountRightsComponent");
     NAAddHideClass("HYGDRBBannerCollectionViewCell");
     NAAddHideClass("HYNewGDRBBannerCollectionViewCell");
     NAAddHideClass("HYOldNewGDRBBannerCollectionViewCell");
@@ -709,6 +721,20 @@ static void NAPatchContainers(void) {
             NAOrigDeviceList = (void (*)(id, SEL, id, long))method_getImplementation(m);
             method_setImplementation(m, (IMP)NADeviceList);
             NA_LOG(@"[HYHardwareFamilyDeviceListView] 推广设备过滤已挂");
+        }
+    }
+
+    Class svcCard = objc_getClass("HYAFServicesCardView");
+    if (svcCard) {
+        Method m = class_getInstanceMethod(svcCard, sel_registerName("queryCardsInfo:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            method_setImplementation(m, (IMP)NAVoid1);
+            NA_LOG(@"[HYAFServicesCardView queryCardsInfo:] -> noop");
+        }
+        m = class_getInstanceMethod(svcCard, sel_registerName("refreshView"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            method_setImplementation(m, (IMP)NA_Void0);
+            NA_LOG(@"[HYAFServicesCardView refreshView] -> noop");
         }
     }
 

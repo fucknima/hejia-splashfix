@@ -94,6 +94,11 @@ static BOOL HTBoolDefault(NSString *key, BOOL def) {
     return [ud objectForKey:key] ? [ud boolForKey:key] : def;
 }
 
+static void HTTabBarDidMoveToWindow(id self, SEL _cmd) {
+    (void)_cmd;
+    ((UIView *)self).alpha = 0;   // 首次布局前不可见，避免 5 个按钮闪一下再变 2 个
+}
+
 static void HTFixTabBackground(UIView *bar) {
     static const NSInteger kBgTag = 0x7AB;
     if (!bar) return;
@@ -133,6 +138,7 @@ static void HTLayoutTabItems(UIView *bar) {
         it.bounds = CGRectMake(0, 0, sz.width, sz.height);
         it.center = CGPointMake(w * (i + 0.5) / items.count, h * 0.5);
     }
+    bar.alpha = 1;
 }
 
 static void HTHideTabItems(UIView *tabBar) {
@@ -268,6 +274,7 @@ static void HeJiaTabInit(void) {
                 HTOrig_tabbarLayout = method_getImplementation(m);
             }
             method_setImplementation(m, (IMP)HTTabBarLayout);
+            class_addMethod(c, sel_registerName("didMoveToWindow"), (IMP)HTTabBarDidMoveToWindow, "v16@0:8");
             TAB_LOG(@"hook -[%s layoutSubviews]", barNames[i]);
             hooked++;
         }
