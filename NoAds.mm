@@ -834,6 +834,7 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
         SEL s = sel_registerName("cameraClick");
         if ([self respondsToSelector:s]) {
             void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
+            if (fn) fn(self, s);
             NA_LOG(@"启动后选中智能摄像头");
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
