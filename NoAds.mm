@@ -683,7 +683,10 @@ static BOOL NAIsHideClassName(NSString *cn) {
     dispatch_once(&once, ^{
         names = @[@"GDRBBannerCollectionViewCell", @"GDRBBannerTableViewCell",
                   @"CommonHardwareSenceHalfViewBannerCell", @"HYBannerCollectionViewCell",
-                  @"HYOperationADSnackBar", @"HardwareToolbarDeviceListView"];
+                  @"HYOperationADSnackBar", @"HardwareToolbarDeviceListView",
+                  @"GDFamilyNet", @"FamilyLifeData", @"EssentialTool",
+                  @"FamilyAccountRights", @"AFServicesCardView", @"AFServicesTimeTrackCell",
+                  @"AFServicesSmartGuardCell", @"HardwareToolbarListCell"];
     });
     for (NSString *n in names) if ([cn containsString:n]) return YES;
     return NO;
@@ -696,7 +699,7 @@ static void NACollapsePromoCard(UIView *v) {
     UIView *cur = v.superview;
     CGFloat w = v.window ? v.window.bounds.size.width : 402.0;
     int steps = 0;
-    while (cur && cur != cur.window && steps < 4) {
+    while (cur && cur != cur.window && steps < 8) {
         if (cur.bounds.size.width >= w * 0.8 && cur.bounds.size.height >= 80) {
             cur.hidden = YES;
             [cur removeFromSuperview];
@@ -763,35 +766,37 @@ static void NAStartSweep(void) {
 static void (*NAOrigHWAppear)(id, SEL, BOOL) = NULL;
 static BOOL NALaunchedCamera = NO;
 
-static void NASelectFirstCell(UIView *root) {
-    if (!root) return;
+static BOOL NAViewHasCameraText(UIView *v, int depth) {
+    if (!v || depth > 8) return NO;
+    NSString *t = nil;
+    if ([v isKindOfClass:[UILabel class]]) t = ((UILabel *)v).text;
+    else if ([v isKindOfClass:[UIButton class]]) t = [(UIButton *)v titleForState:UIControlStateNormal];
+    if ([t isKindOfClass:[NSString class]] &&
+        ([t containsString:@"摄像头"] || [t.lowercaseString containsString:@"camera"])) return YES;
+    for (UIView *sub in v.subviews) if (NAViewHasCameraText(sub, depth + 1)) return YES;
+    return NO;
+}
+
+static BOOL NASelectCameraCell(UIView *root) {
+    if (!root) return NO;
     for (UIView *v in root.subviews) {
         if ([v isKindOfClass:[UICollectionView class]]) {
             UICollectionView *cv = (UICollectionView *)v;
-            if ([cv numberOfSections] > 0 && [cv numberOfItemsInSection:0] > 0) {
-                NSIndexPath *ip = [NSIndexPath indexPathForItem:0 inSection:0];
-                id d = cv.delegate;
-                if ([d respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
-                    [d collectionView:cv didSelectItemAtIndexPath:ip];
-                    NA_LOG(@"自动选中摄像头列表第一项");
+            for (UICollectionViewCell *cell in cv.visibleCells) {
+                if (NAViewHasCameraText(cell, 0)) {
+                    NSIndexPath *ip = [cv indexPathForCell:cell];
+                    id d = cv.delegate;
+                    if (ip && [d respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
+                        [d collectionView:cv didSelectItemAtIndexPath:ip];
+                        NA_LOG(@"已选中摄像头 cell: %@", ip);
+                        return YES;
+                    }
                 }
-                return;
             }
         }
-        if ([v isKindOfClass:[UITableView class]]) {
-            UITableView *tv = (UITableView *)v;
-            if ([tv numberOfSections] > 0 && [tv numberOfRowsInSection:0] > 0) {
-                NSIndexPath *ip = [NSIndexPath indexPathForRow:0 inSection:0];
-                id d = tv.delegate;
-                if ([d respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
-                    [d tableView:tv didSelectRowAtIndexPath:ip];
-                    NA_LOG(@"自动选中摄像头列表第一项");
-                }
-                return;
-            }
-        }
-        NASelectFirstCell(v);
+        if (NASelectCameraCell(v)) return YES;
     }
+    return NO;
 }
 
 static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
@@ -804,15 +809,16 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
         SEL s = sel_registerName("cameraClick");
         if ([self respondsToSelector:s]) {
             void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
-            if (fn) fn(self, s);
-            NA_LOG(@"启动后进入摄像头页");
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+            NA_LOG(@"启动后选中智能摄像头");
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                 UIWindow *kw = nil;
                 for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
                 UIViewController *top = kw.rootViewController;
                 while (top.presentedViewController) top = top.presentedViewController;
-                NASelectFirstCell(top.view);
+                if (!NASelectCameraCell(top.view)) {
+                    NA_LOG(@"当前页没找到摄像头 cell");
+                }
             });
         }
     });
