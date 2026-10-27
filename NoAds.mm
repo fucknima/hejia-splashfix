@@ -547,6 +547,91 @@ static void NAMyInfo(id self, SEL _cmd, id arr, id tab, id real, id block) {
 }
 
 // 设备列表里的推广卡片：按模型类名剔除
+// ---------------------------------------------------------------------------
+// 摄像头 model 抓取 + 路由直达
+//  路由: cmcc://digitalhome/Hardware/CNCDevice_Play?playType=0&hardwareType=..&iotDeviceId=..
+// ---------------------------------------------------------------------------
+static NSString *const kNACamDidKey = @"HeJiaTool_CameraDID";
+static NSString *const kNACamHwKey  = @"HeJiaTool_CameraHWType";
+
+static id NAVal(id obj, NSArray<NSString *> *keys) {
+    for (NSString *k in keys) {
+        @try {
+            id v = [obj valueForKey:k];
+            if (v && v != [NSNull null]) return v;
+        } @catch (__unused NSException *e) {}
+    }
+    return nil;
+}
+
+static BOOL NALooksCamera(id item) {
+    NSString *name = NAVal(item, @[@"deviceName", @"name", @"nickName", @"deviceNickName"]);
+    if ([name isKindOfClass:[NSString class]] &&
+        ([name containsString:@"摄像头"] || [name.lowercaseString containsString:@"camera"])) return YES;
+    NSString *cn = NSStringFromClass([item class]).lowercaseString;
+    if ([cn containsString:@"camera"]) return YES;
+    id cam = NAVal(item, @[@"isCameraDevice", @"isCamera"]);
+    if ([cam isKindOfClass:[NSNumber class]] && [cam boolValue]) return YES;
+    return NO;
+}
+
+static void NACaptureCamera(id item) {
+    if (!item || !NALooksCamera(item)) return;
+    NSString *did = NAVal(item, @[@"iotDeviceId", @"did", @"deviceId", @"devId", @"deviceMac"]);
+    if (![did isKindOfClass:[NSString class]] || did.length == 0) return;
+    id hw = NAVal(item, @[@"hardwareType", @"deviceType", @"deviceTypeId", @"type"]);
+    long hwv = [hw respondsToSelector:@selector(longValue)] ? [hw longValue] : 0;
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud setObject:did forKey:kNACamDidKey];
+    [ud setInteger:hwv forKey:kNACamHwKey];
+    NA_LOG(@"摄像头 model: did=%@ hw=%ld name=%@", did, hwv,
+           NAVal(item, @[@"deviceName", @"name", @"nickName"]) ?: @"?");
+}
+
+static UIViewController *NATopVC(void) {
+    UIWindow *kw = NAKeyWindow();
+    UIViewController *vc = kw.rootViewController;
+    int guard = 0;
+    while (vc && guard++ < 8) {
+        if ([vc isKindOfClass:[UITabBarController class]]) {
+            vc = ((UITabBarController *)vc).selectedViewController;
+        } else if ([vc isKindOfClass:[UINavigationController class]]) {
+            vc = ((UINavigationController *)vc).topViewController;
+        } else if (vc.presentedViewController) {
+            vc = vc.presentedViewController;
+        } else break;
+    }
+    return vc;
+}
+
+static BOOL NATopIsLive(void) {
+    NSString *cn = NSStringFromClass([NATopVC() class]);
+    return [cn containsString:@"UniControl"];
+}
+
+static BOOL NAOpenCameraRoute(void) {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSString *did = [ud stringForKey:kNACamDidKey];
+    long hw = (long)[ud integerForKey:kNACamHwKey];
+    if (did.length == 0) return NO;
+    NSString *enc = [did stringByAddingPercentEncodingWithAllowedCharacters:
+                     [NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *str = [NSString stringWithFormat:
+        @"cmcc://digitalhome/Hardware/CNCDevice_Play?playType=0&hardwareType=%ld&iotDeviceId=%@&time=0",
+        hw, enc ?: did];
+    NSURL *url = [NSURL URLWithString:str];
+    id app = [UIApplication sharedApplication];
+    id delegate = [app delegate];
+    SEL sel = sel_registerName("application:openURL:options:");
+    if (!delegate || ![delegate respondsToSelector:sel]) return NO;
+    BOOL (*fn)(id, SEL, id, id, id) = (BOOL (*)(id, SEL, id, id, id))[delegate methodForSelector:sel];
+    if (!fn) return NO;
+    BOOL ok = fn(delegate, sel, app, url, @{});
+    NA_LOG(@"路由直播: %@ -> %d", str, ok);
+    return ok;
+}
+
+// 记录以“第一个摄像头”为准：NADeviceList 里调用
 static BOOL NAIsPromoDevice(id item) {
     NSString *cn = NSStringFromClass([item class]).lowercaseString;
     static NSString *keys[] = { @"gdrb", @"advert", @"adcard", @"addevice",
@@ -908,10 +993,25 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
     NALaunchedCamera = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        NA_LOG(@"启动后直接进直播（遮罩中间页）");
+        NA_LOG(@"启动后走路由进直播（遮罩中间页）");
         NAShowLaunchCover();
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if (NAOpenCameraRoute()) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    if (NATopIsLive()) {
+                        NA_LOG(@"路由已进入直播页");
+                        NAHideLaunchCover();
+                    } else {
+                        NA_LOG(@"路由没到直播页, 回退 cell 选中");
+                        NATrySelectCamera(0);
+                    }
+                });
+            } else {
+                NATrySelectCamera(0);
+            }
+        });
     });
 }
 
