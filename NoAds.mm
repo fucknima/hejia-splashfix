@@ -417,6 +417,121 @@ static void NADeviceList(id self, SEL _cmd, id arr, long idx) {
     if (NAOrigDeviceList) NAOrigDeviceList(self, _cmd, out, idx);
 }
 
+// 首页运营位/工具/服务推荐：直接截断数据源
+static NSArray *NAEmptyArray(id self, SEL _cmd) { (void)self; (void)_cmd; return @[]; }
+
+static void NAInstallOperationCuts(void) {
+    Class c = objc_getClass("HYHardwareOperationRecommendationManager");
+    if (!c) { NA_LOG(@"找不到 HYHardwareOperationRecommendationManager"); return; }
+    const char *sels[] = { "bannerItemsArray", "componentDictList", "oringedataDictList", NULL };
+    for (int i = 0; sels[i]; i++) {
+        Method m = class_getInstanceMethod(c, sel_registerName(sels[i]));
+        if (!m) { NA_LOG(@"缺 %s", sels[i]); continue; }
+        if (method_getTypeEncoding(m)[0] == '@') {
+            method_setImplementation(m, (IMP)NAEmptyArray);
+            NA_LOG(@"%@ -> []", [NSString stringWithUTF8String:sels[i]]);
+        }
+    }
+}
+
+// 文本级兜底：广告卡片带「广告」，服务推荐带「去订购/未开通」，工具区标题「工具」
+static NSString *NAViewText(UIView *v) {
+    if ([v isKindOfClass:[UILabel class]]) return ((UILabel *)v).text;
+    if ([v isKindOfClass:[UIButton class]]) return [(UIButton *)v titleForState:UIControlStateNormal];
+    return nil;
+}
+
+static BOOL NAIsOurUI(UIView *v) {
+    for (UIResponder *r = v.nextResponder; r; r = r.nextResponder) {
+        if ([r isKindOfClass:[UIViewController class]]) {
+            NSString *cn = NSStringFromClass([r class]);
+            return [cn containsString:@"HTSettings"] || [cn containsString:@"HTLogPreview"];
+        }
+    }
+    return NO;
+}
+
+static void NAHideAncestor(UIView *v, int up, NSArray<NSString *> *classHints) {
+    UIView *cur = v;
+    int steps = 0;
+    UIView *fallback = nil;
+    while (cur && steps < 8) {
+        NSString *cn = NSStringFromClass([cur class]);
+        for (NSString *h in classHints) {
+            if ([cn containsString:h]) { cur.hidden = YES; return; }
+        }
+        if (!fallback && cur.superview && cur.superview != cur.window) fallback = cur;
+        cur = cur.superview;
+        steps++;
+    }
+    if (fallback) fallback.hidden = YES;
+}
+
+static void NAWalkViews(UIView *v, void (^cb)(UIView *)) {
+    if (!v) return;
+    cb(v);
+    for (UIView *sub in v.subviews) NAWalkViews(sub, cb);
+}
+
+static BOOL NAHomeWindow(UIView *v) {
+    for (UIResponder *r = v.nextResponder; r; r = r.nextResponder) {
+        if ([r isKindOfClass:[UIViewController class]]) {
+            NSString *cn = NSStringFromClass([r class]);
+            if ([cn containsString:@"HardwareViewController"] || [cn containsString:@"HardwareDeviceViewController"]) return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL NAIsHideClassName(NSString *cn) {
+    static NSArray<NSString *> *names = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = @[@"GDRBBannerCollectionViewCell", @"GDRBBannerTableViewCell",
+                  @"CommonHardwareSenceHalfViewBannerCell", @"HYBannerCollectionViewCell",
+                  @"HYOperationADSnackBar", @"HardwareToolbarDeviceListView"];
+    });
+    for (NSString *n in names) if ([cn containsString:n]) return YES;
+    return NO;
+}
+
+static void NASweepAds(void) {
+    if (!NAEnabled()) return;
+    NSArray *wins = [UIApplication sharedApplication].windows;
+    for (UIWindow *w in wins) {
+        if (!w || w.hidden) continue;
+        NAWalkViews(w, ^(UIView *v) {
+            if (NAIsOurUI(v)) return;
+            NSString *cn = NSStringFromClass([v class]);
+            if (NAIsHideClassName(cn)) { v.hidden = YES; v.alpha = 0; return; }
+
+            NSString *t = NAViewText(v);
+            if (![t isKindOfClass:[NSString class]] || t.length == 0) return;
+            if ([t isEqualToString:@"广告"]) {
+                NAHideAncestor(v, 0, @[@"Cell", @"Banner", @"Card"]);
+            } else if ([t isEqualToString:@"去订购"] || [t isEqualToString:@"未开通"]) {
+                NAHideAncestor(v, 0, @[@"CollectionView", @"Collection", @"ScrollView", @"Cell"]);
+            } else if ([t isEqualToString:@"工具"] && NAHomeWindow(v)) {
+                NAHideAncestor(v, 1, @[@"Header", @"Section"]);
+            }
+        });
+    }
+}
+
+static NSTimer *gSweepTimer;
+
+static void NAStartSweep(void) {
+    if (gSweepTimer) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NASweepAds();
+        gSweepTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                      repeats:YES
+                                                        block:^(__unused NSTimer *t) {
+            NASweepAds();
+        }];
+    });
+}
+
 static void NAPatchContainers(void) {
     Class banner = objc_getClass("HYCNCAdBanner");
     if (banner) {
@@ -511,16 +626,21 @@ static void NAInstallAll(void) {
     if (NAInstalled) return;
     NAInstalled = YES;
 
-    // 扫描较重，延后到后台，避免启动看门狗
+    // 轻量 hook 立刻装：首页的广告 cell 在 2.5 秒前就可能已经创建，
+    // 晚装 didMoveToWindow 不会补触发（这是上一版广告没消失的根因）。
+    NAPatchSwitch();
+    NAPatchContainers();
+    NAInstallOperationCuts();
+    NAStartSweep();
+
+    // 只有全类扫描延后，避免启动看门狗
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         @autoreleasepool {
             if (!NAEnabled()) return;
             NA_LOG(@"开始延后扫描");
-            NAPatchSwitch();
             NAPatchShowFlags();
             NAPatchAdSDKClasses();
-            NAPatchContainers();
             NA_LOG(@"════ 广告屏蔽完成 ════");
         }
     });

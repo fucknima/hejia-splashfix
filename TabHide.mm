@@ -115,8 +115,8 @@ static void HTLayoutTabItems(UIView *bar) {
 static void HTHideTabItems(UIView *tabBar) {
     if (!tabBar) return;
 
-    BOOL hideService = HTBoolDefault(kHideServiceKey, NO);
-    BOOL hideFind    = HTBoolDefault(kHideFindKey, NO);
+    BOOL hideService = HTBoolDefault(kHideServiceKey, YES);
+    BOOL hideFind    = HTBoolDefault(kHideFindKey, YES);
     BOOL hideAI      = HTBoolDefault(kHideAIKey, YES);
 
     NSMutableArray *targets = [NSMutableArray array];
