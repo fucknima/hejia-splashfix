@@ -39,12 +39,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp -f .theos/obj/HeJiaSplashFix.dylib out/
-          file out/HeJiaSplashFix.dylib
-          lipo -info out/HeJiaSplashFix.dylib
+          cp -f .theos/obj/HeJiaBypass.dylib out/
+          file out/HeJiaBypass.dylib
+          lipo -info out/HeJiaBypass.dylib
 
       - uses: actions/upload-artifact@v4
         with:
-          name: HeJiaSplashFix.dylib
-          path: out/HeJiaSplashFix.dylib
+          name: HeJiaBypass.dylib
+          path: out/HeJiaBypass.dylib
           if-no-files-found: error

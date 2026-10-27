@@ -1,8 +1,8 @@
-Package: com.fucknima.hejiasplashfix
-Name: HeJiaSplashFix
-Version: 1.0.0
+Package: com.fucknima.hejiabypass
+Name: HeJiaBypass
+Version: 2.0.0
 Architecture: iphoneos-arm64
-Description: 移动爱家开屏广告黑屏修复
+Description: 移动爱家检测绕过 + Tab 隐藏 + 广告屏蔽（开屏黑屏修复）
 Maintainer: fucknima
 Author: fucknima
 Section: Tweaks
