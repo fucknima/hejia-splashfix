@@ -588,6 +588,8 @@ static void NACaptureCamera(id item) {
            NAVal(item, @[@"deviceName", @"name", @"nickName"]) ?: @"?");
 }
 
+static UIWindow *NAKeyWindow(void);
+
 static UIViewController *NATopVC(void) {
     UIWindow *kw = NAKeyWindow();
     UIViewController *vc = kw.rootViewController;
