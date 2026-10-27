@@ -27,10 +27,34 @@ extern "C" void HTLogC(const char *tag, const char *cfmt, ...);
 extern "C" {
 
 static NSString *const kNAEnabledKey = @"HeJiaTool_NoAds";
+static NSString *const kNAHomeAdKey  = @"HeJiaTool_NoHomeAd";
+static NSString *const kNAToolKey    = @"HeJiaTool_NoTool";
+static NSString *const kNACameraKey  = @"HeJiaTool_NoCamera";
+static NSString *const kNAWalletKey  = @"HeJiaTool_NoWallet";
+static NSString *const kNAFamilyKey  = @"HeJiaTool_NoFamily";
+static NSString *const kNACameraLaunchKey = @"HeJiaTool_LaunchCamera";
 
-static BOOL NAEnabled(void) {
-    id v = [[NSUserDefaults standardUserDefaults] objectForKey:kNAEnabledKey];
-    return v ? [v boolValue] : YES;   // 未设置 = 开
+static BOOL NABool(NSString *key, BOOL def) {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    return [ud objectForKey:key] ? [ud boolForKey:key] : def;
+}
+
+static BOOL NAEnabled(void) { return NABool(kNAEnabledKey, YES); }
+
+static BOOL NAModule(NSString *key) {
+    if (!NAEnabled()) return NO;
+    return NABool(key, YES);
+}
+
+static NSString *NAKeyForClass(NSString *cn) {
+    if ([cn containsString:@"LaunchAd"]) return kNAEnabledKey;
+    if ([cn containsString:@"GDRB"] || [cn containsString:@"Banner"] ||
+        [cn containsString:@"CNCAd"] || [cn containsString:@"OperationADSnackBar"]) return kNAHomeAdKey;
+    if ([cn containsString:@"Toolbar"] || [cn containsString:@"Tool"]) return kNAToolKey;
+    if ([cn containsString:@"AFServices"]) return kNACameraKey;
+    if ([cn containsString:@"Wallet"] || [cn containsString:@"FamilyLifeData"]) return kNAWalletKey;
+    if ([cn containsString:@"GDFamilyNet"] || [cn containsString:@"FamilyAccountRights"]) return kNAFamilyKey;
+    return kNAEnabledKey;
 }
 
 // ===========================================================================
@@ -324,6 +348,7 @@ static BOOL NAClassHasOwnMethod(Class cls, SEL sel) {
 static void NAHideOnWindow(id self, SEL _cmd) {
     UIView *v = (UIView *)self;
     NSString *cn = NSStringFromClass([v class]);
+    if (!NAModule(NAKeyForClass(cn))) return;
     if ([cn containsString:@"LaunchAdView"] && v.window) {
         v.window.hidden = YES;   // 开屏 window 是黑底，只藏 view 会闪黑
     }
@@ -347,6 +372,7 @@ static IMP NAOrigIMP(Class c, SEL sel) {
 static void NAHideInitFrame(id self, SEL _cmd, CGRect frame) {
     IMP o = NAOrigIMP(object_getClass(self), _cmd);
     if (o) ((void (*)(id, SEL, CGRect))o)(self, _cmd, frame);
+    if (!NAModule(NAKeyForClass(NSStringFromClass([self class])))) return;
     [(UIView *)self setHidden:YES];
     [(UIView *)self setAlpha:0];
 }
@@ -354,6 +380,7 @@ static void NAHideInitFrame(id self, SEL _cmd, CGRect frame) {
 static void NAHideInitCoder(id self, SEL _cmd, id coder) {
     IMP o = NAOrigIMP(object_getClass(self), _cmd);
     if (o) ((void (*)(id, SEL, id))o)(self, _cmd, coder);
+    if (!NAModule(NAKeyForClass(NSStringFromClass([self class])))) return;
     [(UIView *)self setHidden:YES];
     [(UIView *)self setAlpha:0];
 }
@@ -361,6 +388,7 @@ static void NAHideInitCoder(id self, SEL _cmd, id coder) {
 static void NAHidePrepare(id self, SEL _cmd) {
     IMP o = NAOrigIMP(object_getClass(self), _cmd);
     if (o) ((void (*)(id, SEL))o)(self, _cmd);
+    if (!NAModule(NAKeyForClass(NSStringFromClass([self class])))) return;
     [(UIView *)self setHidden:YES];
     [(UIView *)self setAlpha:0];
 }
@@ -474,14 +502,44 @@ static NSArray *NAFilterComponents(id arr) {
 static void (*NAOrigComp)(id, SEL, id, id, id) = NULL;
 static void (*NAOrigMyInfo)(id, SEL, id, id, id, id) = NULL;
 
+static BOOL NABlockOneArray(id block) {
+    if (!block) return NO;
+    struct NABlk { void *isa; int flags; int reserved; void *invoke;
+        struct { unsigned long reserved; unsigned long size; const char *signature; } *descriptor; };
+    struct NABlk *b = (struct NABlk *)(__bridge void *)block;
+    const char *sig = (b && b->descriptor) ? b->descriptor->signature : NULL;
+    if (!sig) return NO;
+    int objs = 0;
+    for (const char *p = sig; *p; p++) if (*p == '@' && p[1] != '?') objs++;
+    return objs == 1;
+}
+
+static id NAWrapViewBlock(id block) {
+    if (!NABlockOneArray(block)) return block;
+    void (^orig)(NSArray *) = block;
+    return [^(NSArray *views) {
+        NSMutableArray *keep = [NSMutableArray array];
+        for (id v in views) {
+            NSString *cn = NSStringFromClass([v class]);
+            BOOL drop = NO;
+            if ([cn containsString:@"GDFamilyNet"] && NAModule(kNAFamilyKey)) drop = YES;
+            if ([cn containsString:@"FamilyLifeData"] && NAModule(kNAWalletKey)) drop = YES;
+            if ([cn containsString:@"EssentialTool"] && NAModule(kNAToolKey)) drop = YES;
+            if ([cn containsString:@"FamilyAccountRights"] && NAModule(kNAFamilyKey)) drop = YES;
+            if (!drop) [keep addObject:v];
+        }
+        orig(keep);
+    } copy];
+}
+
 static void NAComp(id self, SEL _cmd, id arr, id tab, id block) {
     NSArray *out = NAFilterComponents(arr);
-    if (NAOrigComp) NAOrigComp(self, _cmd, out, tab, block);
+    if (NAOrigComp) NAOrigComp(self, _cmd, out, tab, NAWrapViewBlock(block));
 }
 
 static void NAMyInfo(id self, SEL _cmd, id arr, id tab, id real, id block) {
     NSArray *out = NAFilterComponents(arr);
-    if (NAOrigMyInfo) NAOrigMyInfo(self, _cmd, out, tab, real, block);
+    if (NAOrigMyInfo) NAOrigMyInfo(self, _cmd, out, tab, real, NAWrapViewBlock(block));
 }
 
 // 设备列表里的推广卡片：按模型类名剔除
@@ -643,13 +701,14 @@ static void NASweepAds(void) {
 
             NSString *t = NAViewText(v);
             if (![t isKindOfClass:[NSString class]] || t.length == 0) return;
-            if ([t isEqualToString:@"广告"]) {
+            if ([t isEqualToString:@"广告"] && NAModule(kNAHomeAdKey)) {
                 NAHideAncestor(v, 0, @[@"Cell", @"Banner", @"Card"]);
-            } else if ([t isEqualToString:@"去订购"] || [t isEqualToString:@"未开通"]) {
+            } else if (([t isEqualToString:@"去订购"] || [t isEqualToString:@"未开通"]) && NAModule(kNACameraKey)) {
                 NAHideAncestor(v, 0, @[@"CollectionView", @"Collection", @"ScrollView", @"Cell"]);
-            } else if ([t isEqualToString:@"工具"] && NAHomeWindow(v)) {
+            } else if ([t isEqualToString:@"工具"] && NAHomeWindow(v) && NAModule(kNAToolKey)) {
                 NAHideAncestor(v, 1, @[@"Header", @"Section"]);
-            } else if ([t isEqualToString:@"我的钱包"] || [t isEqualToString:@"爱家亲情网"]) {
+            } else if (([t isEqualToString:@"我的钱包"] && NAModule(kNAWalletKey)) ||
+                       ([t isEqualToString:@"爱家亲情网"] && NAModule(kNAFamilyKey))) {
                 CGFloat winW = v.window ? v.window.bounds.size.width : 402.0;
                 UIView *cur = v;
                 while (cur && cur != cur.window) {
@@ -675,6 +734,25 @@ static void NAStartSweep(void) {
                                                         block:^(__unused NSTimer *t) {
             NASweepAds();
         }];
+    });
+}
+
+static void (*NAOrigHWAppear)(id, SEL, BOOL) = NULL;
+static BOOL NALaunchedCamera = NO;
+
+static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
+    if (NAOrigHWAppear) NAOrigHWAppear(self, _cmd, animated);
+    if (NALaunchedCamera) return;
+    if (!NAModule(kNACameraLaunchKey)) return;
+    NALaunchedCamera = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        SEL s = sel_registerName("cameraClick");
+        if ([self respondsToSelector:s]) {
+            void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
+            if (fn) fn(self, s);
+            NA_LOG(@"启动后进入摄像头页");
+        }
     });
 }
 
@@ -784,6 +862,16 @@ static void NAPatchContainers(void) {
             NAOrigSvcInit = (id (*)(id, SEL, CGRect, id))method_getImplementation(m);
             method_setImplementation(m, (IMP)NASvcInit);
             NA_LOG(@"[HYAFServicesCardView initWithFrame:commonPlayer:] hidden");
+        }
+    }
+
+    Class hwVC = objc_getClass("HYHardwareViewController");
+    if (hwVC) {
+        Method m = class_getInstanceMethod(hwVC, sel_registerName("viewDidAppear:"));
+        if (m) {
+            NAOrigHWAppear = (void (*)(id, SEL, BOOL))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NAHWAppear);
+            NA_LOG(@"启动后进摄像头页 hook 已挂");
         }
     }
 
