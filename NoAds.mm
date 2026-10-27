@@ -311,6 +311,38 @@ static BOOL NAClassHasOwnMethod(Class cls, SEL sel) {
     return found;
 }
 
+// 硬件页/首页 banner 类：只隐藏 banner 本身，不碰户型图控件
+static void NAHideOnWindow(id self, SEL _cmd) {
+    [(UIView *)self setHidden:YES];
+    [(UIView *)self setAlpha:0];
+}
+
+static void NAAddHideClass(const char *name) {
+    Class c = objc_getClass(name);
+    if (!c) { NA_LOG(@"找不到 %s", name); return; }
+    SEL sel = sel_registerName("didMoveToWindow");
+    if (NAClassHasOwnMethod(c, sel)) return;
+    if (class_addMethod(c, sel, (IMP)NAHideOnWindow, "v16@0:8")) {
+        NA_LOG(@"隐藏类 %s", name);
+    }
+}
+
+// 分类推荐设备列表：直接把数据置空（数据层截断）
+static void (*NAOrigClassify)(id, SEL, id) = NULL;
+static void (*NAOrigClassifyTitle)(id, SEL, id, id) = NULL;
+
+static void NAClassify(id self, SEL _cmd, id arr) {
+    NA_SCAN("[CLASSIFY] drop %ld items\n",
+            (long)([arr isKindOfClass:[NSArray class]] ? [arr count] : -1));
+    if (NAOrigClassify) NAOrigClassify(self, _cmd, @[]);
+}
+
+static void NAClassifyTitle(id self, SEL _cmd, id arr, id title) {
+    NA_SCAN("[CLASSIFY] drop %ld items (title=%@)\n",
+            (long)([arr isKindOfClass:[NSArray class]] ? [arr count] : -1), title);
+    if (NAOrigClassifyTitle) NAOrigClassifyTitle(self, _cmd, @[], title);
+}
+
 static void NAPatchContainers(void) {
     Class banner = objc_getClass("HYCNCAdBanner");
     if (banner) {
@@ -336,6 +368,26 @@ static void NAPatchContainers(void) {
         if (m && method_getTypeEncoding(m)[0] == 'B') {
             method_setImplementation(m, (IMP)NAIsClose);
             NA_LOG(@"-[HYHardwareBannerManager isClose] -> YES");
+        }
+    }
+
+    NAAddHideClass("HYNewGDRBBannerCollectionViewCell");
+    NAAddHideClass("HYCommonHardwareSenceHalfViewBannerCell");
+    NAAddHideClass("HYBannerCollectionViewCell");
+
+    Class classify = objc_getClass("HYHardwareClassifyBannerDeviceListView");
+    if (classify) {
+        Method m = class_getInstanceMethod(classify, sel_registerName("configWithAllDeviceArray:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            NAOrigClassify = (void (*)(id, SEL, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NAClassify);
+            NA_LOG(@"-[HYHardwareClassifyBannerDeviceListView configWithAllDeviceArray:] -> empty");
+        }
+        m = class_getInstanceMethod(classify, sel_registerName("configWithAllDeviceArray:title:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            NAOrigClassifyTitle = (void (*)(id, SEL, id, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NAClassifyTitle);
+            NA_LOG(@"-[HYHardwareClassifyBannerDeviceListView configWithAllDeviceArray:title:] -> empty");
         }
     }
 }
