@@ -97,6 +97,7 @@ static BOOL HTBoolDefault(NSString *key, BOOL def) {
 static void HTTabBarDidMoveToWindow(id self, SEL _cmd) {
     (void)_cmd;
     ((UIView *)self).alpha = 0;   // 首次布局前不可见，避免 5 个按钮闪一下再变 2 个
+    [(UIView *)self setNeedsLayout];
 }
 
 static void HTFixTabBackground(UIView *bar) {

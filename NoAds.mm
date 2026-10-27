@@ -440,8 +440,7 @@ static BOOL NAIsPromoComponent(id item) {
         @"bigsale", @"banner", @"market", @"promotion", @"promoted",
         @"advert", @"operation", @"tool", @"工具", @"推广",
         @"钱包", @"亲情网", @"wallet", @"qinqing", @"familynet",
-        @"gdFamilyNet".lowercaseString, @"familyLifeData".lowercaseString,
-        @"essentialTool".lowercaseString, @"familyAccountRights".lowercaseString, nil
+        @"gdfamilynet", @"familylifedata", @"essentialtool", @"familyaccountrights", nil
     };
     for (int i = 0; keys[i]; i++) if ([s containsString:keys[i]]) return YES;
     return NO;
