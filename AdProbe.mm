@@ -399,7 +399,7 @@ static void ap_bannerList(id self, SEL _cmd, id tab) {
     if (c_) { \
         Method m_ = class_getInstanceMethod(c_, sel_registerName(sel)); \
         if (m_ && method_getTypeEncoding(m_)) { \
-            origp = (void *)method_getImplementation(m_); \
+            origp = reinterpret_cast<decltype(origp)>(method_getImplementation(m_)); \
             method_setImplementation(m_, (IMP)(wrapper)); \
         } \
     } \
