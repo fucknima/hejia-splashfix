@@ -52,7 +52,7 @@ static id (*pp_orig_init2)(id, SEL, id, id);
 static id pp_init2(id self, SEL _cmd, id model, id xml) {
     id r = pp_orig_init2 ? pp_orig_init2(self, _cmd, model, xml) : self;
     NSString *cn = NSStringFromClass([self class]);
-    if ([cn containsString:@"Play"]) {
+    if ([cn containsString:@"Play"] || [cn containsString:@"UniControl"]) {
         HTLog("HeJiaProbe", [NSString stringWithFormat:
             @"[INIT] %@ model=%@ xml=%@", cn, PPTrim(model), PPTrim(xml)]);
     }
@@ -63,7 +63,7 @@ static id (*pp_orig_init3)(id, SEL, id, id, id);
 static id pp_init3(id self, SEL _cmd, id model, id xml, id origin) {
     id r = pp_orig_init3 ? pp_orig_init3(self, _cmd, model, xml, origin) : self;
     NSString *cn = NSStringFromClass([self class]);
-    if ([cn containsString:@"Play"]) {
+    if ([cn containsString:@"Play"] || [cn containsString:@"UniControl"]) {
         HTLog("HeJiaProbe", [NSString stringWithFormat:
             @"[INIT3] %@ model=%@ xml=%@ origin=%@", cn, PPTrim(model), PPTrim(xml), PPTrim(origin)]);
     }
@@ -81,8 +81,10 @@ static void HTPushProbeInit(void) {
                 method_setImplementation(m, (IMP)pp_push);
             }
         }
-        Class play = objc_getClass("HYCNCDevicePlayVC");
-        if (play) {
+        const char *playNames[] = { "HYCNCDeviceUniControlVC", "HYCNCDevicePlayVC", NULL };
+        for (int i = 0; playNames[i]; i++) {
+            Class play = objc_getClass(playNames[i]);
+            if (!play) continue;
             Method m2 = class_getInstanceMethod(play, sel_registerName("initWithDeviceModel:withXMLModel:"));
             if (m2) {
                 pp_orig_init2 = (id (*)(id, SEL, id, id))method_getImplementation(m2);
