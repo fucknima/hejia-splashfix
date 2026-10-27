@@ -689,6 +689,24 @@ static BOOL NAIsHideClassName(NSString *cn) {
     return NO;
 }
 
+static void NACollapsePromoCard(UIView *v) {
+    if (!v) return;
+    NSString *cn = NSStringFromClass([v class]);
+    if (![cn containsString:@"GDFamilyNet"] && ![cn containsString:@"FamilyLifeData"]) return;
+    UIView *cur = v.superview;
+    CGFloat w = v.window ? v.window.bounds.size.width : 402.0;
+    int steps = 0;
+    while (cur && cur != cur.window && steps < 4) {
+        if (cur.bounds.size.width >= w * 0.8 && cur.bounds.size.height >= 80) {
+            cur.hidden = YES;
+            [cur removeFromSuperview];
+            return;
+        }
+        cur = cur.superview;
+        steps++;
+    }
+}
+
 static void NASweepAds(void) {
     if (!NAEnabled()) return;
     NSArray *wins = [UIApplication sharedApplication].windows;
@@ -697,7 +715,12 @@ static void NASweepAds(void) {
         NAWalkViews(w, ^(UIView *v) {
             if (NAIsOurUI(v)) return;
             NSString *cn = NSStringFromClass([v class]);
-            if (NAIsHideClassName(cn)) { v.hidden = YES; v.alpha = 0; return; }
+            if (NAIsHideClassName(cn)) {
+                v.hidden = YES;
+                v.alpha = 0;
+                NACollapsePromoCard(v);
+                return;
+            }
 
             NSString *t = NAViewText(v);
             if (![t isKindOfClass:[NSString class]] || t.length == 0) return;
@@ -740,6 +763,37 @@ static void NAStartSweep(void) {
 static void (*NAOrigHWAppear)(id, SEL, BOOL) = NULL;
 static BOOL NALaunchedCamera = NO;
 
+static void NASelectFirstCell(UIView *root) {
+    if (!root) return;
+    for (UIView *v in root.subviews) {
+        if ([v isKindOfClass:[UICollectionView class]]) {
+            UICollectionView *cv = (UICollectionView *)v;
+            if ([cv numberOfSections] > 0 && [cv numberOfItemsInSection:0] > 0) {
+                NSIndexPath *ip = [NSIndexPath indexPathForItem:0 inSection:0];
+                id d = cv.delegate;
+                if ([d respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
+                    [d collectionView:cv didSelectItemAtIndexPath:ip];
+                    NA_LOG(@"自动选中摄像头列表第一项");
+                }
+                return;
+            }
+        }
+        if ([v isKindOfClass:[UITableView class]]) {
+            UITableView *tv = (UITableView *)v;
+            if ([tv numberOfSections] > 0 && [tv numberOfRowsInSection:0] > 0) {
+                NSIndexPath *ip = [NSIndexPath indexPathForRow:0 inSection:0];
+                id d = tv.delegate;
+                if ([d respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+                    [d tableView:tv didSelectRowAtIndexPath:ip];
+                    NA_LOG(@"自动选中摄像头列表第一项");
+                }
+                return;
+            }
+        }
+        NASelectFirstCell(v);
+    }
+}
+
 static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
     if (NAOrigHWAppear) NAOrigHWAppear(self, _cmd, animated);
     if (NALaunchedCamera) return;
@@ -752,6 +806,14 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
             void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
             if (fn) fn(self, s);
             NA_LOG(@"启动后进入摄像头页");
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                UIWindow *kw = nil;
+                for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
+                UIViewController *top = kw.rootViewController;
+                while (top.presentedViewController) top = top.presentedViewController;
+                NASelectFirstCell(top.view);
+            });
         }
     });
 }

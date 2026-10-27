@@ -6,6 +6,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 extern "C" void HTLog(const char *tag, NSString *msg);
 extern "C" const char *HTGetLogFilePath(void);
@@ -218,7 +219,7 @@ static void HTClearSharedContainers(void) {
     if (ip.section == 3) {
         if (ip.row == 1) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{ exit(0); });
+                           dispatch_get_main_queue(), ^{ __exit(0); });
             return;
         }
         UIAlertController *a = [UIAlertController
@@ -235,7 +236,7 @@ static void HTClearSharedContainers(void) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                 HTClearSharedContainers();
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{ exit(0); });
+                               dispatch_get_main_queue(), ^{ __exit(0); });
             });
         }]];
         [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
