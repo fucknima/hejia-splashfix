@@ -472,6 +472,22 @@ static BOOL NAIsPromoDevice(id item) {
     static NSString *keys[] = { @"gdrb", @"advert", @"adcard", @"addevice",
                                 @"promotion", @"promoted", @"banner", @"market", nil };
     for (int i = 0; keys[i]; i++) if ([cn containsString:keys[i]]) return YES;
+
+    // HYHardwareListDeviceModel.bannerId 非空 = 设备列表里的广告位卡片
+    @try {
+        id bid = [item valueForKey:@"bannerId"];
+        if ([bid isKindOfClass:[NSString class]] && [bid length] > 0) return YES;
+        if ([bid isKindOfClass:[NSNumber class]] && [bid integerValue] != 0) return YES;
+    } @catch (__unused NSException *e) {}
+
+    for (NSString *k in @[@"isAd", @"isAdvertisement", @"adType", @"ylhInfo", @"ylhAdInfo"]) {
+        @try {
+            id v = [item valueForKey:k];
+            if ([v isKindOfClass:[NSNumber class]] && [v boolValue]) return YES;
+            if ([v isKindOfClass:[NSArray class]] && [v count] > 0) return YES;
+            if ([v isKindOfClass:[NSString class]] && [v length] > 0) return YES;
+        } @catch (__unused NSException *e) {}
+    }
     return NO;
 }
 
@@ -504,6 +520,19 @@ static void NAInstallOperationCuts(void) {
             method_setImplementation(m, (IMP)NAEmptyArray);
             NA_LOG(@"%@ -> []", [NSString stringWithUTF8String:sels[i]]);
         }
+    }
+
+    // 真正的源头：数据是通过 delegate 回调交给页面的，getter 置空拦不住。
+    // 直接不发运营位/AD 请求，页面就没有可插的卡片。
+    Method m = class_getInstanceMethod(c, sel_registerName("fetchOperationDataWithTabId:"));
+    if (m) {
+        method_setImplementation(m, (IMP)NAVoid1);
+        NA_LOG(@"fetchOperationDataWithTabId: -> noop");
+    }
+    m = class_getInstanceMethod(c, sel_registerName("fetchAddDeviceADPlaceListWithTabId:"));
+    if (m) {
+        method_setImplementation(m, (IMP)NAVoid1);
+        NA_LOG(@"fetchAddDeviceADPlaceListWithTabId: -> noop");
     }
 }
 
@@ -680,6 +709,20 @@ static void NAPatchContainers(void) {
             NAOrigDeviceList = (void (*)(id, SEL, id, long))method_getImplementation(m);
             method_setImplementation(m, (IMP)NADeviceList);
             NA_LOG(@"[HYHardwareFamilyDeviceListView] 推广设备过滤已挂");
+        }
+    }
+
+    Class devVC = objc_getClass("HYHardwareDeviceViewController");
+    if (devVC) {
+        Method m = class_getInstanceMethod(devVC, sel_registerName("dealWithYunyingADData"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            method_setImplementation(m, (IMP)NA_Void0);
+            NA_LOG(@"-[HYHardwareDeviceViewController dealWithYunyingADData] -> noop");
+        }
+        m = class_getInstanceMethod(devVC, sel_registerName("showADOperationSnackBarWithArray:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            method_setImplementation(m, (IMP)NA_Void1);
+            NA_LOG(@"-[HYHardwareDeviceViewController showADOperationSnackBarWithArray:] -> noop");
         }
     }
 
