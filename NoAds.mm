@@ -861,14 +861,43 @@ static BOOL NASelectCameraCell(UIView *root) {
     return NO;
 }
 
+static UIView *gLaunchCover = nil;
+
+static UIWindow *NAKeyWindow(void) {
+    for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) return w;
+    return [UIApplication sharedApplication].keyWindow;
+}
+
+static void NAShowLaunchCover(void) {
+    UIWindow *kw = NAKeyWindow();
+    if (!kw) return;
+    if (!gLaunchCover) {
+        gLaunchCover = [[UIView alloc] initWithFrame:kw.bounds];
+        gLaunchCover.backgroundColor = [UIColor systemBackgroundColor];
+        gLaunchCover.tag = 0x1A2B;
+        gLaunchCover.userInteractionEnabled = NO;
+    }
+    [kw addSubview:gLaunchCover];
+    [kw bringSubviewToFront:gLaunchCover];
+}
+
+static void NAHideLaunchCover(void) {
+    [gLaunchCover removeFromSuperview];
+    gLaunchCover = nil;
+}
+
 static void NATrySelectCamera(int attempt) {
-    if (attempt > 5) { NA_LOG(@"摄像头 cell 重试结束"); return; }
+    if (attempt > 20) { NA_LOG(@"摄像头 cell 重试结束"); NAHideLaunchCover(); return; }
     UIWindow *kw = nil;
     for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
     UIViewController *top = kw.rootViewController;
     while (top.presentedViewController) top = top.presentedViewController;
-    if (NASelectCameraCell(top.view)) return;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+    if (NASelectCameraCell(top.view)) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ NAHideLaunchCover(); });
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{ NATrySelectCamera(attempt + 1); });
 }
 
@@ -879,8 +908,9 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
     NALaunchedCamera = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        NA_LOG(@"启动后直接在设备页选中智能摄像头");
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+        NA_LOG(@"启动后直接进直播（遮罩中间页）");
+        NAShowLaunchCover();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
     });
 }
