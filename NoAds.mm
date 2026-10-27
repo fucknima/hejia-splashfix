@@ -714,11 +714,55 @@ static void NACollapsePromoCard(UIView *v) {
     }
 }
 
+static BOOL NAVCIsMyPage(UIView *v) {
+    for (UIResponder *r = v.nextResponder; r; r = r.nextResponder) {
+        if ([r isKindOfClass:[UIViewController class]]) {
+            NSString *cn = NSStringFromClass([r class]);
+            if ([cn containsString:@"MyInfo"]) return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL NAHasVisibleText(UIView *v) {
+    if (!v || v.hidden || v.alpha < 0.1) return NO;
+    NSString *t = nil;
+    if ([v isKindOfClass:[UILabel class]]) t = ((UILabel *)v).text;
+    else if ([v isKindOfClass:[UIButton class]]) t = [(UIButton *)v titleForState:UIControlStateNormal];
+    if ([t isKindOfClass:[NSString class]] && t.length > 0) return YES;
+    for (UIView *sub in v.subviews) if (NAHasVisibleText(sub)) return YES;
+    return NO;
+}
+
+static void NAHideEmptyMyCards(UIView *root) {
+    if (!root || !NAVCIsMyPage(root)) return;
+    CGFloat sw = root.window ? root.window.bounds.size.width : 402.0;
+    for (UIView *v in [root.subviews copy]) {
+        if (v.hidden || v.alpha < 0.1) continue;
+        CGFloat w = v.bounds.size.width, h = v.bounds.size.height;
+        if (w >= sw * 0.8 && h >= 100 && h <= 420 && v.layer.cornerRadius >= 6) {
+            UIColor *bg = v.backgroundColor;
+            if (bg && CGColorGetAlpha(bg.CGColor) > 0.3 && !NAHasVisibleText(v)) {
+                NSString *cn = NSStringFromClass([v class]);
+                if ([cn containsString:@"Cell"]) {
+                    v.hidden = YES;
+                } else {
+                    [v removeFromSuperview];
+                }
+                NA_SCAN("[EMPTY-CARD] removed %s\n", [cn UTF8String]);
+                continue;
+            }
+        }
+        NAHideEmptyMyCards(v);
+    }
+}
+
 static void NASweepAds(void) {
     if (!NAEnabled()) return;
     NSArray *wins = [UIApplication sharedApplication].windows;
     for (UIWindow *w in wins) {
         if (!w || w.hidden) continue;
+        NAHideEmptyMyCards(w);
         NAWalkViews(w, ^(UIView *v) {
             if (NAIsOurUI(v)) return;
             NSString *cn = NSStringFromClass([v class]);
