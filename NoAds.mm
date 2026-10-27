@@ -663,7 +663,12 @@ static void NADeviceList(id self, SEL _cmd, id arr, long idx) {
     NSArray *out = arr;
     if ([arr isKindOfClass:[NSArray class]]) {
         NSMutableArray *keep = [NSMutableArray arrayWithCapacity:[arr count]];
-        for (id item in (NSArray *)arr) if (!NAIsPromoDevice(item)) [keep addObject:item];
+        for (id item in (NSArray *)arr) {
+            if (!NAIsPromoDevice(item)) {
+                [keep addObject:item];
+                NACaptureCamera(item);
+            }
+        }
         out = keep;
         if (keep.count != [(NSArray *)arr count]) {
             NA_SCAN("[DEV-FILTER] %lu -> %lu\n",
