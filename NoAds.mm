@@ -343,6 +343,80 @@ static void NAClassifyTitle(id self, SEL _cmd, id arr, id title) {
     if (NAOrigClassifyTitle) NAOrigClassifyTitle(self, _cmd, @[], title);
 }
 
+// 推广组件过滤：首页/我的页的组件数组在进 UI 前剔除推广块
+static NSString *NAStr(id item, NSString *key) {
+    id v = nil;
+    @try {
+        v = [item isKindOfClass:[NSDictionary class]] ? ((NSDictionary *)item)[key]
+                                                      : [item valueForKey:key];
+    } @catch (__unused NSException *e) { return @""; }
+    return [v isKindOfClass:[NSString class]] ? v : @"";
+}
+
+static BOOL NAIsPromoComponent(id item) {
+    if (!item) return NO;
+    NSString *joined = [NSString stringWithFormat:@"%@ %@ %@ %@ %@ %@",
+        NAStr(item, @"type"), NAStr(item, @"typeCategory"), NAStr(item, @"desc"),
+        NAStr(item, @"id"), NAStr(item, @"name"), NAStr(item, @"title")];
+    NSString *s = joined.lowercaseString;
+    static NSString *keys[] = {
+        @"bigsale", @"banner", @"market", @"promotion", @"promoted",
+        @"advert", @"operation", @"tool", @"工具", @"推广", nil
+    };
+    for (int i = 0; keys[i]; i++) if ([s containsString:keys[i]]) return YES;
+    return NO;
+}
+
+static NSArray *NAFilterComponents(id arr) {
+    if (![arr isKindOfClass:[NSArray class]]) return arr;
+    NSMutableArray *keep = [NSMutableArray arrayWithCapacity:[arr count]];
+    for (id item in (NSArray *)arr) {
+        if (!NAIsPromoComponent(item)) [keep addObject:item];
+    }
+    if (keep.count != [(NSArray *)arr count]) {
+        NA_SCAN("[COMP-FILTER] %lu -> %lu\n",
+                (unsigned long)[(NSArray *)arr count], (unsigned long)keep.count);
+    }
+    return keep;
+}
+
+static void (*NAOrigComp)(id, SEL, id, id, id) = NULL;
+static void (*NAOrigMyInfo)(id, SEL, id, id, id, id) = NULL;
+
+static void NAComp(id self, SEL _cmd, id arr, id tab, id block) {
+    NSArray *out = NAFilterComponents(arr);
+    if (NAOrigComp) NAOrigComp(self, _cmd, out, tab, block);
+}
+
+static void NAMyInfo(id self, SEL _cmd, id arr, id tab, id real, id block) {
+    NSArray *out = NAFilterComponents(arr);
+    if (NAOrigMyInfo) NAOrigMyInfo(self, _cmd, out, tab, real, block);
+}
+
+// 设备列表里的推广卡片：按模型类名剔除
+static BOOL NAIsPromoDevice(id item) {
+    NSString *cn = NSStringFromClass([item class]).lowercaseString;
+    static NSString *keys[] = { @"gdrb", @"advert", @"adcard", @"addevice",
+                                @"promotion", @"promoted", @"banner", @"market", nil };
+    for (int i = 0; keys[i]; i++) if ([cn containsString:keys[i]]) return YES;
+    return NO;
+}
+
+static void (*NAOrigDeviceList)(id, SEL, id, long) = NULL;
+static void NADeviceList(id self, SEL _cmd, id arr, long idx) {
+    NSArray *out = arr;
+    if ([arr isKindOfClass:[NSArray class]]) {
+        NSMutableArray *keep = [NSMutableArray arrayWithCapacity:[arr count]];
+        for (id item in (NSArray *)arr) if (!NAIsPromoDevice(item)) [keep addObject:item];
+        out = keep;
+        if (keep.count != [(NSArray *)arr count]) {
+            NA_SCAN("[DEV-FILTER] %lu -> %lu\n",
+                    (unsigned long)[(NSArray *)arr count], (unsigned long)keep.count);
+        }
+    }
+    if (NAOrigDeviceList) NAOrigDeviceList(self, _cmd, out, idx);
+}
+
 static void NAPatchContainers(void) {
     Class banner = objc_getClass("HYCNCAdBanner");
     if (banner) {
@@ -371,9 +445,43 @@ static void NAPatchContainers(void) {
         }
     }
 
+    NAAddHideClass("HYGDRBBannerCollectionViewCell");
     NAAddHideClass("HYNewGDRBBannerCollectionViewCell");
+    NAAddHideClass("HYOldNewGDRBBannerCollectionViewCell");
+    NAAddHideClass("HYYunnanGDRBBannerCollectionViewCell");
+    NAAddHideClass("HYGDRBBannerTableViewCell");
+    NAAddHideClass("HYNewGDRBBannerTableViewCell");
     NAAddHideClass("HYCommonHardwareSenceHalfViewBannerCell");
     NAAddHideClass("HYBannerCollectionViewCell");
+    NAAddHideClass("HYOperationADSnackBar");
+
+    Class comp = objc_getClass("HYComponentManager");
+    if (comp) {
+        Method m = class_getInstanceMethod(comp, sel_registerName("getViewWithComponentDictArray:tabId:completeBlock:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            NAOrigComp = (void (*)(id, SEL, id, id, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NAComp);
+            NA_LOG(@"[HYComponentManager] 推广组件过滤已挂");
+        }
+    }
+    Class myinfo = objc_getClass("HYMyInfoComponentManager");
+    if (myinfo) {
+        Method m = class_getInstanceMethod(myinfo, sel_registerName("getViewWithComponentDictArray:tabId:realTabId:completeBlock:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            NAOrigMyInfo = (void (*)(id, SEL, id, id, id, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NAMyInfo);
+            NA_LOG(@"[HYMyInfoComponentManager] 推广组件过滤已挂");
+        }
+    }
+    Class devList = objc_getClass("HYHardwareFamilyDeviceListView");
+    if (devList) {
+        Method m = class_getInstanceMethod(devList, sel_registerName("configWithAllDeviceArray:currentRoomIndex:"));
+        if (m && method_getTypeEncoding(m)[0] == 'v') {
+            NAOrigDeviceList = (void (*)(id, SEL, id, long))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NADeviceList);
+            NA_LOG(@"[HYHardwareFamilyDeviceListView] 推广设备过滤已挂");
+        }
+    }
 
     Class classify = objc_getClass("HYHardwareClassifyBannerDeviceListView");
     if (classify) {

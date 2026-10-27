@@ -56,92 +56,21 @@ static UIViewController *HTTopMost(void) {
 // 弹出主菜单
 // ---------------------------------------------------------------------------
 static void HTShowMenu(void) {
-    // 防重复弹
     if (objc_getAssociatedObject([UIApplication sharedApplication],
                                  kHTMenuShowingKey)) return;
 
     UIViewController *top = HTTopMost();
     if (!top) { UI_LOG(@"找不到顶层控制器"); return; }
 
-    UI_LOG(@"菜单触发成功");
-
-    UIAlertController *sheet = [UIAlertController
-        alertControllerWithTitle:@"HeJiaTool 工具箱"
-                         message:@"选择要执行的操作"
-                  preferredStyle:UIAlertControllerStyleActionSheet];
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"⚙️  打开设置"
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction *a) {
-        (void)a;
-        UIViewController *vc = HTMakeSettingsVC();
-        if (!vc) return;
-        UINavigationController *nav =
-            [[UINavigationController alloc] initWithRootViewController:vc];
-        [HTTopMost() presentViewController:nav animated:YES completion:nil];
-    }]];
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"📄  复制日志路径"
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction *a) {
-        (void)a;
-        const char *p = HTGetLogFilePath();
-        NSString *path = [NSString stringWithUTF8String:p ?: ""];
-        [UIPasteboard generalPasteboard].string = path;
-        UI_LOG(@"已复制日志路径");
-
-        UIAlertController *ok = [UIAlertController
-            alertControllerWithTitle:@"日志路径已复制"
-                             message:path
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [ok addAction:[UIAlertAction actionWithTitle:@"好"
-                                               style:UIAlertActionStyleDefault
-                                             handler:nil]];
-        [HTTopMost() presentViewController:ok animated:YES completion:nil];
-    }]];
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"🧹  清理广告缓存"
-                                              style:UIAlertActionStyleDestructive
-                                            handler:^(UIAlertAction *a) {
-        (void)a;
-        // 清 NSURLCache
-        NSURLCache *cache = [NSURLCache sharedURLCache];
-        [cache removeAllCachedResponses];
-        // 清用户默认值里的运营位缓存
-        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-        for (NSString *k in @[@"TabbarsDictCache", @"TabBarPageDictCacheKey",
-                              @"shouldModifyTabbarInfoDict", @"ModifyTabbarInfoDict",
-                              @"ModifyTabbarsDictForProvice"]) {
-            [ud removeObjectForKey:k];
-        }
-        UI_LOG(@"已清理广告/运营位缓存");
-
-        UIAlertController *ok = [UIAlertController
-            alertControllerWithTitle:@"已清理"
-                             message:@"缓存已清除，请重启 App 生效"
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [ok addAction:[UIAlertAction actionWithTitle:@"好"
-                                               style:UIAlertActionStyleDefault
-                                             handler:nil]];
-        [HTTopMost() presentViewController:ok animated:YES completion:nil];
-    }]];
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"取消"
-                                              style:UIAlertActionStyleCancel
-                                            handler:nil]];
-
-    UIPopoverPresentationController *pop = sheet.popoverPresentationController;
-    if (pop) {
-        pop.sourceView = top.view;
-        pop.sourceRect = CGRectMake(top.view.bounds.size.width / 2,
-                                    top.view.bounds.size.height / 2, 1, 1);
-    }
+    UIViewController *vc = HTMakeSettingsVC();
+    if (!vc) { UI_LOG(@"设置页创建失败"); return; }
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
 
     objc_setAssociatedObject([UIApplication sharedApplication],
                              kHTMenuShowingKey, @YES,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    [top presentViewController:sheet animated:YES completion:^{
+    UI_LOG(@"摇一摇 -> 打开设置");
+    [top presentViewController:nav animated:YES completion:^{
         objc_setAssociatedObject([UIApplication sharedApplication],
                                  kHTMenuShowingKey, nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);

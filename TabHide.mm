@@ -36,6 +36,7 @@ extern "C" {
 
 static NSString *const kHideServiceKey = @"HeJiaTool_HideService";
 static NSString *const kHideFindKey    = @"HeJiaTool_HideFind";
+static NSString *const kHideAIKey      = @"HeJiaTool_HideAI";
 
 static IMP HTOrig_tabbarLayout = NULL;
 static __thread BOOL gInTabLayout = NO;
@@ -72,13 +73,51 @@ static BOOL HTViewHasText(id view, NSString *text, int depth) {
 // ---------------------------------------------------------------------------
 // 隐藏按钮：遍历 tab bar 的直接子视图，含目标文字者设为 hidden
 // ---------------------------------------------------------------------------
+static BOOL HTViewHasTextLoose(id view, NSString *needle, int depth) {
+    if (!view || depth > 6 || needle.length == 0) return NO;
+    @try {
+        NSString *t = nil;
+        if ([view isKindOfClass:[UILabel class]]) t = ((UILabel *)view).text;
+        else if ([view isKindOfClass:[UIButton class]]) t = [(UIButton *)view titleForState:UIControlStateNormal];
+        if ([t isKindOfClass:[NSString class]] && [t rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound) return YES;
+        if ([view isKindOfClass:[UIView class]]) {
+            for (UIView *sub in ((UIView *)view).subviews) {
+                if (HTViewHasTextLoose(sub, needle, depth + 1)) return YES;
+            }
+        }
+    } @catch (NSException *e) { (void)e; }
+    return NO;
+}
+
+static BOOL HTBoolDefault(NSString *key, BOOL def) {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    return [ud objectForKey:key] ? [ud boolForKey:key] : def;
+}
+
+static void HTLayoutTabItems(UIView *bar) {
+    NSMutableArray *items = [NSMutableArray array];
+    for (UIView *sub in bar.subviews) {
+        if (sub.hidden) continue;
+        NSString *cn = NSStringFromClass([sub class]);
+        if ([cn containsString:@"HYCustomTabBarItem"]) [items addObject:sub];
+    }
+    if (items.count < 2) return;
+    CGFloat w = bar.bounds.size.width;
+    CGFloat h = bar.bounds.size.height;
+    for (NSUInteger i = 0; i < items.count; i++) {
+        UIView *it = items[i];
+        CGSize sz = it.bounds.size;
+        it.bounds = CGRectMake(0, 0, sz.width, sz.height);
+        it.center = CGPointMake(w * (i + 0.5) / items.count, h * 0.5);
+    }
+}
+
 static void HTHideTabItems(UIView *tabBar) {
     if (!tabBar) return;
 
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    BOOL hideService = [ud boolForKey:kHideServiceKey];
-    BOOL hideFind    = [ud boolForKey:kHideFindKey];
-    if (!hideService && !hideFind) return;
+    BOOL hideService = HTBoolDefault(kHideServiceKey, NO);
+    BOOL hideFind    = HTBoolDefault(kHideFindKey, NO);
+    BOOL hideAI      = HTBoolDefault(kHideAIKey, YES);
 
     NSMutableArray *targets = [NSMutableArray array];
     if (hideService) [targets addObject:@"服务"];
@@ -87,24 +126,30 @@ static void HTHideTabItems(UIView *tabBar) {
     NSArray *subs = tabBar.subviews;
     if (!subs || subs.count == 0) return;
 
-    int hiddenCount = 0;
     for (UIView *sub in subs) {
-        // 跳过背景图
         NSString *cn = NSStringFromClass([sub class]);
         if ([cn containsString:@"ImageView"]) continue;
 
+        BOOL shouldHide = NO;
+        NSString *why = nil;
         for (NSString *t in targets) {
-            if (HTViewHasText(sub, t, 0)) {
-                if (!sub.hidden) {
-                    sub.hidden = YES;      // 只改 hidden，安全
-                    TAB_LOG(@"已隐藏 Tab 按钮：%@", t);
-                }
-                hiddenCount++;
-                break;
+            if (HTViewHasText(sub, t, 0)) { shouldHide = YES; why = t; break; }
+        }
+        if (!shouldHide && hideAI) {
+            if (HTViewHasTextLoose(sub, @"ai_assistant", 0) ||
+                HTViewHasTextLoose(sub, @"灵犀", 0)) {
+                shouldHide = YES; why = @"AI灵犀";
+            }
+        }
+        if (shouldHide) {
+            if (!sub.hidden) {
+                sub.hidden = YES;
+                TAB_LOG(@"已隐藏 Tab 按钮：%@", why);
             }
         }
     }
-    (void)hiddenCount;
+
+    HTLayoutTabItems(tabBar);
 }
 
 // ---------------------------------------------------------------------------
