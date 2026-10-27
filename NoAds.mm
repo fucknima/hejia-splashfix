@@ -345,6 +345,8 @@ static BOOL NAClassHasOwnMethod(Class cls, SEL sel) {
 }
 
 // 硬件页/首页 banner 类：只隐藏 banner 本身，不碰户型图控件
+static void NACollapsePromoCard(UIView *v);
+
 static void NAHideOnWindow(id self, SEL _cmd) {
     UIView *v = (UIView *)self;
     NSString *cn = NSStringFromClass([v class]);
@@ -354,6 +356,10 @@ static void NAHideOnWindow(id self, SEL _cmd) {
     }
     [v setHidden:YES];
     [v setAlpha:0];
+    if ([cn containsString:@"GDFamilyNet"] || [cn containsString:@"FamilyLifeData"] ||
+        [cn containsString:@"EssentialTool"] || [cn containsString:@"FamilyAccountRights"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ NACollapsePromoCard(v); });
+    }
 }
 
 typedef struct { Class cls; SEL sel; IMP orig; } NAHookRec;
