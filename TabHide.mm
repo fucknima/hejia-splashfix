@@ -94,10 +94,20 @@ static BOOL HTBoolDefault(NSString *key, BOOL def) {
     return [ud objectForKey:key] ? [ud boolForKey:key] : def;
 }
 
+static void HTHideTabItems(UIView *tabBar);
+static void HTLayoutTabItems(UIView *bar);
+
 static void HTTabBarDidMoveToWindow(id self, SEL _cmd) {
     (void)_cmd;
-    ((UIView *)self).alpha = 0;   // 首次布局前不可见，避免 5 个按钮闪一下再变 2 个
-    [(UIView *)self setNeedsLayout];
+    UIView *bar = (UIView *)self;
+    bar.alpha = 0;   // 全部隐藏/排版完成前不可见，避免 5→3→2 的中间态
+    [bar setNeedsLayout];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        HTHideTabItems(bar);
+        HTLayoutTabItems(bar);
+        bar.alpha = 1;
+    });
 }
 
 static void HTFixTabBackground(UIView *bar) {
@@ -139,7 +149,6 @@ static void HTLayoutTabItems(UIView *bar) {
         it.bounds = CGRectMake(0, 0, sz.width, sz.height);
         it.center = CGPointMake(w * (i + 0.5) / items.count, h * 0.5);
     }
-    bar.alpha = 1;
 }
 
 static void HTHideTabItems(UIView *tabBar) {

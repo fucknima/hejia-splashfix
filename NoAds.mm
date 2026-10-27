@@ -434,6 +434,18 @@ static BOOL NAIsPromoComponent(id item) {
         for (id v in [(NSDictionary *)item allValues]) {
             if ([v isKindOfClass:[NSString class]]) [joined appendFormat:@" %@", v];
         }
+    } else if ([item isKindOfClass:[NSObject class]]) {
+        unsigned int pc = 0;
+        objc_property_t *props = class_copyPropertyList([item class], &pc);
+        for (unsigned int i = 0; i < pc; i++) {
+            const char *pn = property_getName(props[i]);
+            if (!pn) continue;
+            @try {
+                id v = [item valueForKey:[NSString stringWithUTF8String:pn]];
+                if ([v isKindOfClass:[NSString class]]) [joined appendFormat:@" %@", v];
+            } @catch (__unused NSException *e) {}
+        }
+        free(props);
     }
     NSString *s = joined.lowercaseString;
     static NSString *keys[] = {
@@ -514,6 +526,22 @@ static void NADeviceList(id self, SEL _cmd, id arr, long idx) {
 
 // 首页运营位/工具/服务推荐：直接截断数据源
 static NSArray *NAEmptyArray(id self, SEL _cmd) { (void)self; (void)_cmd; return @[]; }
+
+static void (*NAOrigSvcDataSource)(id, SEL, id) = NULL;
+
+static void NASetEmptyArray(id self, SEL _cmd, id value) {
+    (void)value;
+    if (NAOrigSvcDataSource) NAOrigSvcDataSource(self, _cmd, @[]);
+}
+
+static id (*NAOrigSvcInit)(id, SEL, CGRect, id);
+
+static id NASvcInit(id self, SEL _cmd, CGRect frame, id player) {
+    if (NAOrigSvcInit) self = NAOrigSvcInit(self, _cmd, frame, player);
+    [(UIView *)self setHidden:YES];
+    [(UIView *)self setAlpha:0];
+    return self;
+}
 
 static void NAInstallOperationCuts(void) {
     Class c = objc_getClass("HYHardwareOperationRecommendationManager");
@@ -681,6 +709,16 @@ static void NAPatchContainers(void) {
     NAAddHideClass("HYLaunchAdView");
     NAAddHideClass("HYLaunchAdForPadView");
     NAAddHideClass("HYAFServicesCardView");
+    NAAddHideClass("HYAFServicesTimeTrackCell");
+    NAAddHideClass("HYAFServicesSmartGuardCell");
+    NAAddHideClass("HYAFServicesCommonCell");
+    NAAddHideClass("HYAFServicesCloudCell");
+    NAAddHideClass("HYAFServicesInspectionCell");
+    NAAddHideClass("HYAFServicesKindCell");
+    NAAddHideClass("HYAFServicesMoreCell");
+    NAAddHideClass("HYAFServicesSmartTalkCell");
+    NAAddHideClass("HYHardwareToolbarListCell");
+    NAAddHideClass("HYHardwareNoDeviceToolbarListCell");
     NAAddHideClass("HYMyInfoGDFamilyNetComponent");
     NAAddHideClass("HYMyInfoFamilyLifeDataCardsView");
     NAAddHideClass("HYMyInfoEssentialToolComponent");
@@ -734,6 +772,18 @@ static void NAPatchContainers(void) {
         if (m && method_getTypeEncoding(m)[0] == 'v') {
             method_setImplementation(m, (IMP)NA_Void0);
             NA_LOG(@"[HYAFServicesCardView refreshView] -> noop");
+        }
+        m = class_getInstanceMethod(svcCard, sel_registerName("setDataSource:"));
+        if (m) {
+            NAOrigSvcDataSource = (void (*)(id, SEL, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NASetEmptyArray);
+            NA_LOG(@"[HYAFServicesCardView setDataSource:] -> []");
+        }
+        m = class_getInstanceMethod(svcCard, sel_registerName("initWithFrame:commonPlayer:"));
+        if (m) {
+            NAOrigSvcInit = (id (*)(id, SEL, CGRect, id))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NASvcInit);
+            NA_LOG(@"[HYAFServicesCardView initWithFrame:commonPlayer:] hidden");
         }
     }
 
