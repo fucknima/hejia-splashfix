@@ -478,9 +478,7 @@ static BOOL NAIsPromoComponent(id item) {
     NSString *s = joined.lowercaseString;
     static NSString *keys[] = {
         @"bigsale", @"banner", @"market", @"promotion", @"promoted",
-        @"advert", @"operation", @"tool", @"工具", @"推广",
-        @"钱包", @"亲情网", @"wallet", @"qinqing", @"familynet",
-        @"gdfamilynet", @"familylifedata", @"essentialtool", @"familyaccountrights", nil
+        @"advert", @"operation", nil
     };
     for (int i = 0; keys[i]; i++) if ([s containsString:keys[i]]) return YES;
     return NO;
@@ -831,14 +829,9 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
     NALaunchedCamera = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        SEL s = sel_registerName("cameraClick");
-        if ([self respondsToSelector:s]) {
-            void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
-            if (fn) fn(self, s);
-            NA_LOG(@"启动后选中智能摄像头");
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
-        }
+        NA_LOG(@"启动后直接在设备页选中智能摄像头");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
     });
 }
 
