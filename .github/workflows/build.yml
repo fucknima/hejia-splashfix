@@ -39,7 +39,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp -f .theos/obj/HeJiaBypass.dylib out/
+          cp -f .theos/obj/HeJiaBypass.dylib out/HeJiaBypass.dylib
+          # 没有越狱环境时 CydiaSubstrate.framework 不存在: 改成 IPA 内 Frameworks/libsubstrate.dylib
+          for arch in arm64 arm64e; do
+            lipo -thin "$arch" -output "/tmp/hj-$arch.dylib" out/HeJiaBypass.dylib
+            install_name_tool -change \
+              /Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate \
+              @loader_path/libsubstrate.dylib "/tmp/hj-$arch.dylib"
+          done
+          lipo -create -output out/HeJiaBypass.dylib /tmp/hj-arm64.dylib /tmp/hj-arm64e.dylib
+          otool -L out/HeJiaBypass.dylib
           file out/HeJiaBypass.dylib
           lipo -info out/HeJiaBypass.dylib
 
