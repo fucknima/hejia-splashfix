@@ -71,7 +71,16 @@ static void NADismissLaunch(id manager, NSInteger attempt) {
 
 static void NAStartAdLaunch(id self, SEL _cmd, id arg) {
     if (NAOrigStartAdLaunch) NAOrigStartAdLaunch(self, _cmd, arg);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)),
+    // 开屏 window 一旦建出来立刻隐藏，避免先看到一帧广告/黑底
+    id view = NAValue(self, @"launchAdView");
+    if (!view) view = NAValue(self, @"launchAdForPadView");
+    if ([view isKindOfClass:[UIView class]]) {
+        UIView *v = (UIView *)view;
+        if (v.window) v.window.hidden = YES;
+        [v setHidden:YES];
+        [v setAlpha:0];
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.01 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{ NADismissLaunch(self, 0); });
 }
 
@@ -313,8 +322,13 @@ static BOOL NAClassHasOwnMethod(Class cls, SEL sel) {
 
 // 硬件页/首页 banner 类：只隐藏 banner 本身，不碰户型图控件
 static void NAHideOnWindow(id self, SEL _cmd) {
-    [(UIView *)self setHidden:YES];
-    [(UIView *)self setAlpha:0];
+    UIView *v = (UIView *)self;
+    NSString *cn = NSStringFromClass([v class]);
+    if ([cn containsString:@"LaunchAdView"] && v.window) {
+        v.window.hidden = YES;   // 开屏 window 是黑底，只藏 view 会闪黑
+    }
+    [v setHidden:YES];
+    [v setAlpha:0];
 }
 
 typedef struct { Class cls; SEL sel; IMP orig; } NAHookRec;
