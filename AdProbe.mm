@@ -278,12 +278,12 @@ static void APCapture(void) {
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    _start = [[touches anyObject] locationInWindow];
+    _start = [[touches anyObject] locationInView:self.window];
     _moved = NO;
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    CGPoint p = [[touches anyObject] locationInWindow];
+    CGPoint p = [[touches anyObject] locationInView:self.window];
     CGFloat dx = p.x - _start.x, dy = p.y - _start.y;
     if (fabs(dx) > 4 || fabs(dy) > 4) _moved = YES;
     CGPoint c = CGPointMake(self.center.x + dx, self.center.y + dy);
