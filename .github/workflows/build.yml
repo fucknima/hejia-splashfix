@@ -1,0 +1,50 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --depth 1 makefiles
+          rm -rf "$THEOS/sdks"
+          git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          "$THEOS/bin/update-theos"
+
+      - name: Install ldid
+        run: brew install ldid fakeroot
+
+      - name: Build
+        run: |
+          set -o pipefail
+          make clean || true
+          make -j"$(sysctl -n hw.ncpu)" DEBUG=0 FINALPACKAGE=1 2>&1 | tee build.log
+
+      - name: Show log on failure
+        if: failure()
+        run: tail -80 build.log
+
+      - name: Stage dylib
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp -f .theos/obj/HeJiaSplashFix.dylib out/
+          file out/HeJiaSplashFix.dylib
+          lipo -info out/HeJiaSplashFix.dylib
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HeJiaSplashFix.dylib
+          path: out/HeJiaSplashFix.dylib
+          if-no-files-found: error

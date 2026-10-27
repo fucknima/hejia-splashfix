@@ -1,0 +1,9 @@
+Package: com.fucknima.hejiasplashfix
+Name: HeJiaSplashFix
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 移动爱家开屏广告黑屏修复
+Maintainer: fucknima
+Author: fucknima
+Section: Tweaks
+Depends: mobilesubstrate
