@@ -152,7 +152,7 @@ static void HTClearSharedContainers(void) {
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     (void)tv;
     if (s == 0) return 4;
-    if (s == 1) return 1;
+    if (s == 1) return 2;
     if (s == 2) return 1;
     return 2;
 }
@@ -185,8 +185,8 @@ static void HTClearSharedContainers(void) {
         [sw setOn:on animated:NO];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if (ip.section == 1) {
-        cell.textLabel.text = @"清除数据";
-        cell.textLabel.textColor = [UIColor systemRedColor];
+        cell.textLabel.text = ip.row == 0 ? @"清除数据" : @"重启 App";
+        cell.textLabel.textColor = ip.row == 0 ? [UIColor systemRedColor] : [UIColor labelColor];
         sw.hidden = YES;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessoryType = UITableViewCellAccessoryNone;
@@ -211,6 +211,11 @@ static void HTClearSharedContainers(void) {
     [tv deselectRowAtIndexPath:ip animated:YES];
 
     if (ip.section == 1) {
+        if (ip.row == 1) {   // 重启
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ exit(0); });
+            return;
+        }
         UIAlertController *a = [UIAlertController
             alertControllerWithTitle:@"清除所有数据？"
                              message:@"会删除 App 与所有共享容器里的设置、缓存、登录态和日志，完成后立即退出。此操作不可恢复。"
@@ -218,9 +223,17 @@ static void HTClearSharedContainers(void) {
         [a addAction:[UIAlertAction actionWithTitle:@"全部清除并退出"
                                               style:UIAlertActionStyleDestructive
                                             handler:^(__unused UIAlertAction *x) {
-            HTClearSharedContainers();
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{ exit(0); });
+            UIAlertController *p = [UIAlertController
+                alertControllerWithTitle:@"正在清除数据…"
+                                 message:@"完成后会自动退出"
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [self presentViewController:p animated:YES completion:nil];
+            // 清 Library/Preferences/Caches 很慢，必须离开主线程，否则界面卡死
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                HTClearSharedContainers();
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{ exit(0); });
+            });
         }]];
         [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         a.popoverPresentationController.sourceView = self.view;

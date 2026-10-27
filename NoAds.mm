@@ -317,9 +317,67 @@ static void NAHideOnWindow(id self, SEL _cmd) {
     [(UIView *)self setAlpha:0];
 }
 
+typedef struct { Class cls; SEL sel; IMP orig; } NAHookRec;
+static NAHookRec gHookRecs[128];
+static int gHookRecCount = 0;
+
+static IMP NAOrigIMP(Class c, SEL sel) {
+    for (Class k = c; k; k = class_getSuperclass(k)) {
+        for (int i = gHookRecCount - 1; i >= 0; i--) {
+            if (gHookRecs[i].cls == k && gHookRecs[i].sel == sel) return gHookRecs[i].orig;
+        }
+    }
+    return NULL;
+}
+
+static void NAHideInitFrame(id self, SEL _cmd, CGRect frame) {
+    IMP o = NAOrigIMP(object_getClass(self), _cmd);
+    if (o) ((void (*)(id, SEL, CGRect))o)(self, _cmd, frame);
+    [(UIView *)self setHidden:YES];
+    [(UIView *)self setAlpha:0];
+}
+
+static void NAHideInitCoder(id self, SEL _cmd, id coder) {
+    IMP o = NAOrigIMP(object_getClass(self), _cmd);
+    if (o) ((void (*)(id, SEL, id))o)(self, _cmd, coder);
+    [(UIView *)self setHidden:YES];
+    [(UIView *)self setAlpha:0];
+}
+
+static void NAHidePrepare(id self, SEL _cmd) {
+    IMP o = NAOrigIMP(object_getClass(self), _cmd);
+    if (o) ((void (*)(id, SEL))o)(self, _cmd);
+    [(UIView *)self setHidden:YES];
+    [(UIView *)self setAlpha:0];
+}
+
+static void NAInstallHideInit(Class c) {
+    struct { const char *sel; IMP imp; const char *types; } specs[3] = {
+        {"initWithFrame:", (IMP)NAHideInitFrame, "v@:{CGRect={CGPoint=dd}{CGSize=dd}}"},
+        {"initWithCoder:", (IMP)NAHideInitCoder, "v@:@"},
+        {"prepareForReuse", (IMP)NAHidePrepare, "v@:"}
+    };
+    for (int i = 0; i < 3; i++) {
+        if (gHookRecCount >= 120) return;
+        SEL sel = sel_registerName(specs[i].sel);
+        Method own = class_getInstanceMethod(c, sel);
+        IMP inherited = own ? method_getImplementation(own) : NULL;
+        if (class_addMethod(c, sel, specs[i].imp, specs[i].types)) {
+            gHookRecs[gHookRecCount++] = (NAHookRec){c, sel, inherited};
+        } else {
+            Method m = class_getInstanceMethod(c, sel);
+            if (m) {
+                gHookRecs[gHookRecCount++] = (NAHookRec){c, sel, method_getImplementation(m)};
+                method_setImplementation(m, specs[i].imp);
+            }
+        }
+    }
+}
+
 static void NAAddHideClass(const char *name) {
     Class c = objc_getClass(name);
     if (!c) { NA_LOG(@"找不到 %s", name); return; }
+    NAInstallHideInit(c);
     SEL sel = sel_registerName("didMoveToWindow");
     if (NAClassHasOwnMethod(c, sel)) return;
     if (class_addMethod(c, sel, (IMP)NAHideOnWindow, "v16@0:8")) {
@@ -361,7 +419,8 @@ static BOOL NAIsPromoComponent(id item) {
     NSString *s = joined.lowercaseString;
     static NSString *keys[] = {
         @"bigsale", @"banner", @"market", @"promotion", @"promoted",
-        @"advert", @"operation", @"tool", @"工具", @"推广", nil
+        @"advert", @"operation", @"tool", @"工具", @"推广",
+        @"钱包", @"亲情网", @"wallet", @"qinqing", @"familynet", nil
     };
     for (int i = 0; keys[i]; i++) if ([s containsString:keys[i]]) return YES;
     return NO;
@@ -513,6 +572,16 @@ static void NASweepAds(void) {
                 NAHideAncestor(v, 0, @[@"CollectionView", @"Collection", @"ScrollView", @"Cell"]);
             } else if ([t isEqualToString:@"工具"] && NAHomeWindow(v)) {
                 NAHideAncestor(v, 1, @[@"Header", @"Section"]);
+            } else if ([t isEqualToString:@"我的钱包"] || [t isEqualToString:@"爱家亲情网"]) {
+                CGFloat winW = v.window ? v.window.bounds.size.width : 402.0;
+                UIView *cur = v;
+                while (cur && cur != cur.window) {
+                    if (cur.bounds.size.width >= winW * 0.8 && cur.bounds.size.height >= 80) {
+                        cur.hidden = YES;
+                        break;
+                    }
+                    cur = cur.superview;
+                }
             }
         });
     }
@@ -560,6 +629,8 @@ static void NAPatchContainers(void) {
         }
     }
 
+    NAAddHideClass("HYLaunchAdView");
+    NAAddHideClass("HYLaunchAdForPadView");
     NAAddHideClass("HYGDRBBannerCollectionViewCell");
     NAAddHideClass("HYNewGDRBBannerCollectionViewCell");
     NAAddHideClass("HYOldNewGDRBBannerCollectionViewCell");

@@ -94,6 +94,28 @@ static BOOL HTBoolDefault(NSString *key, BOOL def) {
     return [ud objectForKey:key] ? [ud boolForKey:key] : def;
 }
 
+static void HTFixTabBackground(UIView *bar) {
+    static const NSInteger kBgTag = 0x7AB;
+    if (!bar) return;
+    for (UIView *sub in bar.subviews) {
+        if ([NSStringFromClass([sub class]) containsString:@"HYCustomTabBarItem"]) continue;
+        if (sub.tag == kBgTag) continue;
+        sub.hidden = YES;
+    }
+    UIView *bg = [bar viewWithTag:kBgTag];
+    if (!bg) {
+        bg = [[UIView alloc] initWithFrame:CGRectZero];
+        bg.tag = kBgTag;
+        bg.userInteractionEnabled = NO;
+        bg.backgroundColor = [UIColor secondarySystemBackgroundColor];
+        bg.layer.cornerRadius = 28;
+        bg.layer.masksToBounds = YES;
+        [bar insertSubview:bg atIndex:0];
+    }
+    bar.backgroundColor = [UIColor clearColor];
+    bg.frame = CGRectMake(8, 6, bar.bounds.size.width - 16, MAX(60, bar.bounds.size.height - 6));
+}
+
 static void HTLayoutTabItems(UIView *bar) {
     NSMutableArray *items = [NSMutableArray array];
     for (UIView *sub in bar.subviews) {
@@ -102,6 +124,7 @@ static void HTLayoutTabItems(UIView *bar) {
         if ([cn containsString:@"HYCustomTabBarItem"]) [items addObject:sub];
     }
     if (items.count < 2) return;
+    HTFixTabBackground(bar);
     CGFloat w = bar.bounds.size.width;
     CGFloat h = bar.bounds.size.height;
     for (NSUInteger i = 0; i < items.count; i++) {
