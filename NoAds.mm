@@ -794,9 +794,34 @@ static BOOL NASelectCameraCell(UIView *root) {
                 }
             }
         }
+        if ([v isKindOfClass:[UITableView class]]) {
+            UITableView *tv = (UITableView *)v;
+            for (UITableViewCell *cell in tv.visibleCells) {
+                if (NAViewHasCameraText(cell, 0)) {
+                    NSIndexPath *ip = [tv indexPathForCell:cell];
+                    id d = tv.delegate;
+                    if (ip && [d respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+                        [d tableView:tv didSelectRowAtIndexPath:ip];
+                        NA_LOG(@"已选中摄像头 cell: %@", ip);
+                        return YES;
+                    }
+                }
+            }
+        }
         if (NASelectCameraCell(v)) return YES;
     }
     return NO;
+}
+
+static void NATrySelectCamera(int attempt) {
+    if (attempt > 5) { NA_LOG(@"摄像头 cell 重试结束"); return; }
+    UIWindow *kw = nil;
+    for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
+    UIViewController *top = kw.rootViewController;
+    while (top.presentedViewController) top = top.presentedViewController;
+    if (NASelectCameraCell(top.view)) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ NATrySelectCamera(attempt + 1); });
 }
 
 static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
@@ -811,15 +836,7 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
             void (*fn)(id, SEL) = (void (*)(id, SEL))[self methodForSelector:s];
             NA_LOG(@"启动后选中智能摄像头");
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                UIWindow *kw = nil;
-                for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
-                UIViewController *top = kw.rootViewController;
-                while (top.presentedViewController) top = top.presentedViewController;
-                if (!NASelectCameraCell(top.view)) {
-                    NA_LOG(@"当前页没找到摄像头 cell");
-                }
-            });
+                           dispatch_get_main_queue(), ^{ NATrySelectCamera(0); });
         }
     });
 }
