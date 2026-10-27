@@ -32,3 +32,15 @@
 ## 构建
 
 推送 main 或手动 `workflow_dispatch`，Actions 产物：`HeJiaBypass.dylib`（arm64 + arm64e）。
+
+## 广告现场抓取（AdProbe）
+
+这一版带一个可拖动的红色「记」悬浮按钮，只记录、不拦截：
+
+- 打开有广告的页面，点一下按钮，会生成 `Documents/HeJiaTool/adprobe-<时间>.log`。
+- 日志里有完整视图树（类名/坐标/隐藏态/所属 VC/文本）、VC 链、广告类名汇总，
+  以及最近 300 条候选调用（HYComponentManager / HYMyInfoComponentManager /
+  McsAdvertsModuleService / 弹窗 / 设备列表 / banner list / VC 出现）。
+- 另外记录 App 版本和 `HeJiaTool_NoAds` 状态。
+
+把 log 发出来即可按真实类名做数据层截断；诊断完成后把 AdProbe.mm 从 Makefile 移除即可。
