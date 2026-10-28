@@ -11,6 +11,7 @@
 extern "C" void HTLog(const char *tag, NSString *msg);
 extern "C" const char *HTGetLogFilePath(void);
 extern "C" const char *HTGetAdScanLogPath(void);
+extern "C" void HTSetLogEnabled(BOOL enabled);
 
 #define SVC_LOG(...) HTLog("HeJiaUI", [NSString stringWithFormat:__VA_ARGS__])
 
@@ -26,6 +27,7 @@ static NSString *const kHideServiceKey = @"HeJiaTool_HideService";
 static NSString *const kHideFindKey    = @"HeJiaTool_HideFind";
 static NSString *const kHideAIKey      = @"HeJiaTool_HideAI";
 static NSString *const kLaunchCameraKey= @"HeJiaTool_LaunchCamera";
+static NSString *const kLogEnabledKey  = @"HeJiaTool_LogEnabled";
 
 static void HTPostTabbarChanged(void) {
     [[NSNotificationCenter defaultCenter] postNotificationName:@"HeJiaTool_TabbarReload" object:nil];
@@ -72,7 +74,9 @@ static void HTPostTabbarChanged(void) {
 static void HTClearSharedContainers(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSMutableArray<NSURL *> *roots = [NSMutableArray array];
-    for (NSString *gid in @[@"group.com.cmcc.zhihuiguanjia", @"group.zhangkelin.top"]) {
+    // 只清移动爱家自己的 App Group。签名模板注入的共享组（例如 group.zhangkelin.top）
+    // 属于同一签名下的其它 App，清它会把别人的数据一起删掉，绝对不要加进来。
+    for (NSString *gid in @[@"group.com.cmcc.zhihuiguanjia"]) {
         NSURL *u = [fm containerURLForSecurityApplicationGroupIdentifier:gid];
         if (u) [roots addObject:u];
     }
@@ -142,7 +146,7 @@ static void HTClearSharedContainers(void) {
     if (s == 2) return @"启动并进入设备页后，自动打开摄像头页。";
     if (s == 3) return @"清除 App 与所有 App Group 共享容器的数据（设置、缓存、登录态、日志），完成后退出。";
     if (s == 4) return @"过签名检测默认开启且不可关闭，否则应用会被判定为已篡改。";
-    if (s == 5) return @"点击直接预览日志内容。";
+    if (s == 5) return @"关闭写入后立即停止落盘，已写内容保留，可随时预览。";
     return nil;
 }
 
@@ -154,7 +158,7 @@ static void HTClearSharedContainers(void) {
         case 2: return 1;
         case 3: return 2;
         case 4: return 1;
-        default: return 2;
+        default: return 3;
     }
 }
 
@@ -203,8 +207,16 @@ static void HTClearSharedContainers(void) {
         sw.tag = 200;
         [sw setOn:YES animated:NO];
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    } else if (ip.row == 0) {
+        cell.textLabel.text = @"写入日志文件";
+        sw.hidden = NO;
+        sw.enabled = YES;
+        sw.tag = 300;
+        BOOL on = [ud objectForKey:kLogEnabledKey] ? [ud boolForKey:kLogEnabledKey] : YES;
+        [sw setOn:on animated:NO];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
-        cell.textLabel.text = ip.row == 0 ? @"主日志  HeJiaTool.log" : @"扫描明细  adscan.log";
+        cell.textLabel.text = ip.row == 1 ? @"主日志  HeJiaTool.log" : @"扫描明细  adscan.log";
         cell.textLabel.textColor = [UIColor systemBlueColor];
         sw.hidden = YES;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
@@ -258,10 +270,10 @@ static void HTClearSharedContainers(void) {
     }
 
     if (ip.section == 5) {
-        const char *p = (ip.row == 0) ? HTGetLogFilePath() : HTGetAdScanLogPath();
+        const char *p = (ip.row == 1) ? HTGetLogFilePath() : HTGetAdScanLogPath();
         HTLogPreviewViewController *vc = [[HTLogPreviewViewController alloc] init];
         vc.filePath = [NSString stringWithUTF8String:p ?: ""];
-        vc.displayTitle = ip.row == 0 ? @"主日志" : @"扫描明细";
+        vc.displayTitle = ip.row == 1 ? @"主日志" : @"扫描明细";
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
         [self presentViewController:nav animated:YES completion:nil];
     }
@@ -275,6 +287,12 @@ static void HTClearSharedContainers(void) {
         kNoAdsKey, kNoHomeAdKey, kNoToolKey, kNoCameraKey, kNoWalletKey, kNoFamilyKey,
         kHideServiceKey, kHideFindKey, kHideAIKey, kLaunchCameraKey
     };
+    if (sw.tag == 300) {
+        [ud setBool:sw.isOn forKey:kLogEnabledKey];
+        HTSetLogEnabled(sw.isOn);
+        SVC_LOG(@"日志写入 = %@", sw.isOn ? @"开" : @"关");
+        return;
+    }
     int idx = (int)sw.tag - 100;
     if (idx >= 0 && idx < 10) {
         [ud setBool:sw.isOn forKey:keys[idx]];

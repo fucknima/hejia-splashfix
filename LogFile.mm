@@ -27,6 +27,10 @@
 
 static pthread_mutex_t gLogLock = PTHREAD_MUTEX_INITIALIZER;
 
+// 日志总开关：设置页可关，关闭后不再写任何文件（含 stderr）
+static volatile int gLogEnabled = 1;
+static NSString *const kHTLogEnabledKey = @"HeJiaTool_LogEnabled";
+
 extern "C" {
 
 const char *HTGetLogFilePath(void);
@@ -35,6 +39,8 @@ const char *HTGetLogDir(void);
 void HTLog(const char *tag, NSString *msg);
 void HTLogC(const char *tag, const char *cfmt, ...);
 void HTScan(NSString *msg);
+void HTSetLogEnabled(BOOL enabled);
+BOOL HTGetLogEnabled(void);
 
 // ---------------------------------------------------------------------------
 // 目录：只写 App Group 共享容器
@@ -114,6 +120,7 @@ static void HTRotate(const char *path) {
 // ---------------------------------------------------------------------------
 static void HTWriteLine(const char *path, const char *tag, NSString *msg) {
     if (!path || !msg) return;
+    if (!gLogEnabled) return;
 
     @autoreleasepool {
         NSDateFormatter *df = [[NSDateFormatter alloc] init];
@@ -146,6 +153,15 @@ void HTScan(NSString *msg) {
     HTWriteLine(HTGetAdScanLogPath(), NULL, msg);
 }
 
+void HTSetLogEnabled(BOOL enabled) {
+    gLogEnabled = enabled ? 1 : 0;
+    @try {
+        [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:kHTLogEnabledKey];
+    } @catch (__unused NSException *e) {}
+}
+
+BOOL HTGetLogEnabled(void) { return gLogEnabled != 0; }
+
 // 纯 C 格式版本（不含 %@），给不想用 NSString 的地方用
 void HTLogC(const char *tag, const char *cfmt, ...) {
     if (!cfmt) return;
@@ -165,6 +181,11 @@ static void HTLogInit(void) {
         NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
         NSString *ver = @"?";
         @try { ver = info[@"CFBundleShortVersionString"] ?: @"?"; } @catch (NSException *e) { (void)e; }
+
+        @try {
+            id v = [[NSUserDefaults standardUserDefaults] objectForKey:kHTLogEnabledKey];
+            gLogEnabled = v ? ([[NSUserDefaults standardUserDefaults] boolForKey:kHTLogEnabledKey] ? 1 : 0) : 1;
+        } @catch (__unused NSException *e) {}
 
         BOOL groupOK = NO;
         @try {
