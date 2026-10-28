@@ -243,32 +243,32 @@ static BOOL fp_openURL(id self, SEL _cmd, id app, id url, id options) {
 // ---------------------------------------------------------------------------
 // 路由分发链
 // ---------------------------------------------------------------------------
-static BOOL (*fp_orig_hwOpen)(id, SEL, id, id, id);
-static BOOL fp_hwOpen(id self, SEL _cmd, id url, id target, id params) {
+static id (*fp_orig_hwOpen)(id, SEL, id, id, id);
+static id fp_hwOpen(id self, SEL _cmd, id url, id target, id params) {
     NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
     FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
         @"HYHardwareModule openUrl=%@\n target=%@\n params=%@", u, FPTrim(target), FPTrim(params)]);
-    BOOL r = fp_orig_hwOpen ? fp_orig_hwOpen(self, _cmd, url, target, params) : NO;
-    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareModule -> %d", r]);
+    id r = fp_orig_hwOpen ? fp_orig_hwOpen(self, _cmd, url, target, params) : nil;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareModule -> %@", FPTrim(r)]);
     return r;
 }
 
-static BOOL (*fp_orig_navOpen)(id, SEL, id, id, id);
-static BOOL fp_navOpen(id self, SEL _cmd, id url, id target, id params) {
+static id (*fp_orig_navOpen)(id, SEL, id, id, id);
+static id fp_navOpen(id self, SEL _cmd, id url, id target, id params) {
     NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
     FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
         @"HYURLNavigator openUrl=%@\n target=%@\n params=%@", u, FPTrim(target), FPTrim(params)]);
-    BOOL r = fp_orig_navOpen ? fp_orig_navOpen(self, _cmd, url, target, params) : NO;
-    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYURLNavigator -> %d", r]);
+    id r = fp_orig_navOpen ? fp_orig_navOpen(self, _cmd, url, target, params) : nil;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYURLNavigator -> %@", FPTrim(r)]);
     return r;
 }
 
-static BOOL (*fp_orig_playOpen)(id, SEL, id);
-static BOOL fp_playOpen(id self, SEL _cmd, id url) {
-    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+static id (*fp_orig_playOpen)(id, SEL, id);
+static id fp_playOpen(id self, SEL _cmd, id url) {
+    NSString *u = [url isKindOfClass:[NSURL class] ] ? [(NSURL *)url absoluteString] : FPTrim(url);
     FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYCNCDevicePlayVC openURL=%@", u]);
-    BOOL r = fp_orig_playOpen ? fp_orig_playOpen(self, _cmd, url) : NO;
-    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYCNCDevicePlayVC -> %d", r]);
+    id r = fp_orig_playOpen ? fp_orig_playOpen(self, _cmd, url) : nil;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYCNCDevicePlayVC -> %@", FPTrim(r)]);
     return r;
 }
 
@@ -278,13 +278,23 @@ static BOOL fp_playOpen(id self, SEL _cmd, id url) {
 //   + openKhUrl:query:withParams:khSDKType:khDeviceType:device:   参数已解析
 //   + getDeviceVCWithType:pageType:model:                  真正造 VC
 // ---------------------------------------------------------------------------
-static BOOL (*fp_orig_khOpen)(id, SEL, id, id, id);
-static BOOL fp_khOpen(id self, SEL _cmd, id url, id target, id params) {
+static id (*fp_orig_khOpen)(id, SEL, id, id, id);
+static id fp_khOpen(id self, SEL _cmd, id url, id target, id params) {
     NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
     FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
         @"HYHardwareURLBridge openKHUrl=%@\n params=%@", u, FPTrim(params)]);
-    BOOL r = fp_orig_khOpen ? fp_orig_khOpen(self, _cmd, url, target, params) : NO;
-    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareURLBridge openKHUrl -> %d", r]);
+    id r = fp_orig_khOpen ? fp_orig_khOpen(self, _cmd, url, target, params) : nil;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareURLBridge openKHUrl -> %@", FPTrim(r)]);
+    return r;
+}
+
+static id (*fp_orig_adapterOpen)(id, SEL, id, id, id);
+static id fp_adapterOpen(id self, SEL _cmd, id url, id target, id params) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
+        @"HYURLAdapter openUrl=%@\n target=%@ params=%@", u, FPTrim(target), FPTrim(params)]);
+    id r = fp_orig_adapterOpen ? fp_orig_adapterOpen(self, _cmd, url, target, params) : nil;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYURLAdapter -> %@", FPTrim(r)]);
     return r;
 }
 
@@ -416,7 +426,7 @@ static void HTFinalProbeInit(void) {
         if (hwMod) {
             Method m = class_getInstanceMethod(hwMod, sel_registerName("openUrl:withTarget:withParams:"));
             if (m) {
-                fp_orig_hwOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                fp_orig_hwOpen = (id (*)(id, SEL, id, id, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_hwOpen);
             }
         }
@@ -424,7 +434,7 @@ static void HTFinalProbeInit(void) {
         if (urlNav) {
             Method m = class_getInstanceMethod(urlNav, sel_registerName("openUrl:withTarget:withParams:"));
             if (m) {
-                fp_orig_navOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                fp_orig_navOpen = (id (*)(id, SEL, id, id, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_navOpen);
             }
         }
@@ -432,8 +442,17 @@ static void HTFinalProbeInit(void) {
         if (playVC) {
             Method m = class_getInstanceMethod(playVC, sel_registerName("openURL:"));
             if (m) {
-                fp_orig_playOpen = (BOOL (*)(id, SEL, id))method_getImplementation(m);
+                fp_orig_playOpen = (id (*)(id, SEL, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_playOpen);
+            }
+        }
+
+        Class adapter = objc_getClass("HYURLAdapter");
+        if (adapter) {
+            Method m = class_getInstanceMethod(adapter, sel_registerName("openUrl:withTarget:withParams:"));
+            if (m) {
+                fp_orig_adapterOpen = (id (*)(id, SEL, id, id, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_adapterOpen);
             }
         }
 
@@ -441,7 +460,7 @@ static void HTFinalProbeInit(void) {
         if (bridge) {
             Method m = class_getClassMethod(bridge, sel_registerName("openKHUrl:withTarget:withParams:"));
             if (m) {
-                fp_orig_khOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                fp_orig_khOpen = (id (*)(id, SEL, id, id, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_khOpen);
             }
             m = class_getClassMethod(bridge, sel_registerName(
