@@ -447,9 +447,9 @@ static void HTFinalProbeInit(void) {
             }
         }
 
-        Class adapter = objc_getClass("HYURLAdapter");
-        if (adapter) {
-            Method m = class_getInstanceMethod(adapter, sel_registerName("openUrl:withTarget:withParams:"));
+        Class urlAdapter = objc_getClass("HYURLAdapter");
+        if (urlAdapter) {
+            Method m = class_getInstanceMethod(urlAdapter, sel_registerName("openUrl:withTarget:withParams:"));
             if (m) {
                 fp_orig_adapterOpen = (id (*)(id, SEL, id, id, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_adapterOpen);
