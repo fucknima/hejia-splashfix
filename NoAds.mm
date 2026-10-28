@@ -1043,6 +1043,8 @@ static void NAHideLaunchCover(void) {
 
 static void NATrySelectCamera(int attempt) {
     if (attempt > 20) { NA_LOG(@"摄像头 cell 重试结束"); NAHideLaunchCover(); return; }
+    // 路由可能只是慢一点：已经到直播页就不要再点一次 cell
+    if (NATopIsLive()) { NA_LOG(@"已在直播页, 不再选 cell"); NAHideLaunchCover(); return; }
     UIWindow *kw = nil;
     for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
     UIViewController *top = kw.rootViewController;
