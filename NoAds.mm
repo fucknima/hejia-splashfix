@@ -565,9 +565,11 @@ static id NAVal(id obj, NSArray<NSString *> *keys) {
 }
 
 static BOOL NALooksCamera(id item) {
-    NSString *name = NAVal(item, @[@"deviceName", @"name", @"nickName", @"deviceNickName"]);
+    NSString *name = NAVal(item, @[@"desc", @"deviceName", @"name", @"nickName", @"deviceNickName"]);
     if ([name isKindOfClass:[NSString class]] &&
         ([name containsString:@"摄像头"] || [name.lowercaseString containsString:@"camera"])) return YES;
+    NSString *cat = NAVal(item, @[@"subCategoryNameV2", @"subCategoryName", @"mainCategoryNameV2"]);
+    if ([cat isKindOfClass:[NSString class]] && [cat containsString:@"摄像头"]) return YES;
     NSString *cn = NSStringFromClass([item class]).lowercaseString;
     if ([cn containsString:@"camera"]) return YES;
     id cam = NAVal(item, @[@"isCameraDevice", @"isCamera"]);
@@ -577,15 +579,15 @@ static BOOL NALooksCamera(id item) {
 
 static void NACaptureCamera(id item) {
     if (!item || !NALooksCamera(item)) return;
-    NSString *did = NAVal(item, @[@"iotDeviceId", @"did", @"deviceId", @"devId", @"deviceMac"]);
+    NSString *did = NAVal(item, @[@"id", @"macId", @"iotDeviceId", @"did", @"deviceId", @"devId", @"deviceMac"]);
     if (![did isKindOfClass:[NSString class]] || did.length == 0) return;
-    id hw = NAVal(item, @[@"hardwareType", @"deviceType", @"deviceTypeId", @"type"]);
+    id hw = NAVal(item, @[@"type", @"hardwareType", @"deviceType", @"deviceTypeId"]);
     long hwv = [hw respondsToSelector:@selector(longValue)] ? [hw longValue] : 0;
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setObject:did forKey:kNACamDidKey];
     [ud setInteger:hwv forKey:kNACamHwKey];
     NA_LOG(@"摄像头 model: did=%@ hw=%ld name=%@", did, hwv,
-           NAVal(item, @[@"deviceName", @"name", @"nickName"]) ?: @"?");
+           NAVal(item, @[@"desc", @"deviceName", @"name", @"nickName"]) ?: @"?");
 }
 
 static UIWindow *NAKeyWindow(void);
