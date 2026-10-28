@@ -657,6 +657,9 @@ static NSString *NACameraRouteURL(long deviceClass) {
            hw, enc ?: did];
 }
 
+// 启动路由期间强制 push 无动画：设备页还没上屏时直接换成直播页，不能有转场。
+static BOOL NAPushNoAnimated = NO;
+
 // 走 App 自己的摄像头路由入口：+[HYHardwareURLBridge openKHUrl:withTarget:withParams:]
 // 它内部会 openKhUrl -> fetchKhDevice -> push HYCNCDeviceUniControlVC，不经过外层 URL 分发。
 static BOOL NAOpenCameraRoute(long deviceClass) {
@@ -667,6 +670,9 @@ static BOOL NAOpenCameraRoute(long deviceClass) {
     if (!bridge || ![bridge respondsToSelector:sel]) return NO;
     id (*fn)(id, SEL, id, id, id) = (id (*)(id, SEL, id, id, id))[bridge methodForSelector:sel];
     if (!fn) return NO;
+    NAPushNoAnimated = YES;   // push 可能异步发生，保持 2.5 秒
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ NAPushNoAnimated = NO; });
     id r = fn(bridge, sel, [NSURL URLWithString:str], nil, nil);
     NA_LOG(@"路由直播(bridge): %@ -> %@", str, r);
     return r != nil;
@@ -1002,98 +1008,58 @@ static BOOL NASelectCameraCell(UIView *root) {
     return NO;
 }
 
-static UIView *gLaunchCover = nil;
-
 static UIWindow *NAKeyWindow(void) {
     for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) return w;
     return [UIApplication sharedApplication].keyWindow;
 }
 
-static void NAHideLaunchCover(void);
-
-static void NAShowLaunchCover(void) {
-    UIWindow *kw = NAKeyWindow();
-    if (!kw) return;
-    if (!gLaunchCover) {
-        gLaunchCover = [[UIView alloc] initWithFrame:kw.bounds];
-        gLaunchCover.backgroundColor = [UIColor systemBackgroundColor];
-        gLaunchCover.tag = 0x1A2B;
-        gLaunchCover.userInteractionEnabled = NO;
-    }
-    [kw addSubview:gLaunchCover];
-    [kw bringSubviewToFront:gLaunchCover];
-    NA_LOG(@"遮罩展示");
-    // 兜底：任何情况下 3 秒后必撤，避免卡在遮罩上
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        if (gLaunchCover) { NA_LOG(@"遮罩超时强撤"); NAHideLaunchCover(); }
-    });
-}
-
-static void NAHideLaunchCover(void) {
-    if (gLaunchCover) {
-        [gLaunchCover removeFromSuperview];
-        gLaunchCover = nil;
-    }
-    // 防御：窗口可能换过，按 tag 清掉所有窗口上的残留
-    for (UIWindow *w in [UIApplication sharedApplication].windows) {
-        UIView *v = [w viewWithTag:0x1A2B];
-        if (v) [v removeFromSuperview];
-    }
-    NA_LOG(@"遮罩已撤");
-}
-
 static void NATrySelectCamera(int attempt) {
-    if (attempt > 20) { NA_LOG(@"摄像头 cell 重试结束"); NAHideLaunchCover(); return; }
+    if (attempt > 20) { NA_LOG(@"摄像头 cell 重试结束"); return; }
     // 路由可能只是慢一点：已经到直播页就不要再点一次 cell
-    if (NATopIsLive()) { NA_LOG(@"已在直播页, 不再选 cell"); NAHideLaunchCover(); return; }
+    if (NATopIsLive()) { NA_LOG(@"已在直播页, 不再选 cell"); return; }
     UIWindow *kw = nil;
     for (UIWindow *w in [UIApplication sharedApplication].windows) if (w.isKeyWindow) { kw = w; break; }
     UIViewController *top = kw.rootViewController;
     while (top.presentedViewController) top = top.presentedViewController;
-    if (NASelectCameraCell(top.view)) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ NAHideLaunchCover(); });
-        return;
-    }
+    if (NASelectCameraCell(top.view)) return;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{ NATrySelectCamera(attempt + 1); });
+}
+
+static void (*NAOrigPush)(id, SEL, UIViewController *, BOOL) = NULL;
+
+static void NAPush(id self, SEL _cmd, UIViewController *vc, BOOL animated) {
+    if (NAPushNoAnimated && animated) {
+        NA_LOG(@"push(animated=NO) %s", [NSStringFromClass([vc class]) UTF8String]);
+        animated = NO;
+    }
+    if (NAOrigPush) NAOrigPush(self, _cmd, vc, animated);
 }
 
 static void (*NAOrigLiveAppear)(id, SEL, BOOL) = NULL;
 
 static void NALiveAppear(id self, SEL _cmd, BOOL animated) {
     if (NAOrigLiveAppear) NAOrigLiveAppear(self, _cmd, animated);
-    if (gLaunchCover) {
-        NA_LOG(@"直播页已出现, 撤遮罩");
-        NAHideLaunchCover();
-    }
+    NAPushNoAnimated = NO;
+    if (NALaunchedCamera) NA_LOG(@"直播页出现(首帧前路由)");
 }
 
-static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
+// 设备页“将要出现”：此刻还没上屏，是最后一个能直接换成直播页的时机。
+static void NAHWWillAppear(id self, SEL _cmd, BOOL animated) {
     if (NAOrigHWAppear) NAOrigHWAppear(self, _cmd, animated);
     if (NALaunchedCamera) return;
     if (!NAModule(kNACameraLaunchKey)) return;
     NALaunchedCamera = YES;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+    NA_LOG(@"设备页 willAppear -> 立刻走路由(无动画)");
+    NAOpenCameraRoute(1);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        NA_LOG(@"启动后走路由进直播（遮罩中间页）");
-        NAShowLaunchCover();
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            // 真路由：+[HYHardwareURLBridge openKHUrl:...]，deviceClass=1 -> khDeviceType=1 (IPC)
-            NAOpenCameraRoute(1);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                if (NATopIsLive()) {
-                    NA_LOG(@"路由已进入直播页");
-                    NAHideLaunchCover();
-                } else {
-                    NA_LOG(@"路由没到直播页, 回退 cell 选中");
-                    NATrySelectCamera(0);
-                }
-            });
-        });
+        if (NATopIsLive()) {
+            NA_LOG(@"路由已进入直播页");
+        } else {
+            NA_LOG(@"路由没到直播页, 回退 cell 选中");
+            NATrySelectCamera(0);
+        }
     });
 }
 
@@ -1208,12 +1174,19 @@ static void NAPatchContainers(void) {
 
     Class hwVC = objc_getClass("HYHardwareViewController");
     if (hwVC) {
-        Method m = class_getInstanceMethod(hwVC, sel_registerName("viewDidAppear:"));
+        Method m = class_getInstanceMethod(hwVC, sel_registerName("viewWillAppear:"));
         if (m) {
             NAOrigHWAppear = (void (*)(id, SEL, BOOL))method_getImplementation(m);
-            method_setImplementation(m, (IMP)NAHWAppear);
-            NA_LOG(@"启动后进摄像头页 hook 已挂");
+            method_setImplementation(m, (IMP)NAHWWillAppear);
+            NA_LOG(@"启动进直播 hook 已挂（viewWillAppear）");
         }
+    }
+
+    Method pushM = class_getInstanceMethod([UINavigationController class],
+                                           sel_registerName("pushViewController:animated:"));
+    if (pushM) {
+        NAOrigPush = (void (*)(id, SEL, UIViewController *, BOOL))method_getImplementation(pushM);
+        method_setImplementation(pushM, (IMP)NAPush);
     }
 
     // 直播页真正出现就撤遮罩，不依赖定时器判断
