@@ -1009,6 +1009,8 @@ static UIWindow *NAKeyWindow(void) {
     return [UIApplication sharedApplication].keyWindow;
 }
 
+static void NAHideLaunchCover(void);
+
 static void NAShowLaunchCover(void) {
     UIWindow *kw = NAKeyWindow();
     if (!kw) return;
