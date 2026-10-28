@@ -1020,11 +1020,25 @@ static void NAShowLaunchCover(void) {
     }
     [kw addSubview:gLaunchCover];
     [kw bringSubviewToFront:gLaunchCover];
+    NA_LOG(@"遮罩展示");
+    // 兜底：任何情况下 3 秒后必撤，避免卡在遮罩上
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (gLaunchCover) { NA_LOG(@"遮罩超时强撤"); NAHideLaunchCover(); }
+    });
 }
 
 static void NAHideLaunchCover(void) {
-    [gLaunchCover removeFromSuperview];
-    gLaunchCover = nil;
+    if (gLaunchCover) {
+        [gLaunchCover removeFromSuperview];
+        gLaunchCover = nil;
+    }
+    // 防御：窗口可能换过，按 tag 清掉所有窗口上的残留
+    for (UIWindow *w in [UIApplication sharedApplication].windows) {
+        UIView *v = [w viewWithTag:0x1A2B];
+        if (v) [v removeFromSuperview];
+    }
+    NA_LOG(@"遮罩已撤");
 }
 
 static void NATrySelectCamera(int attempt) {
@@ -1040,6 +1054,16 @@ static void NATrySelectCamera(int attempt) {
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{ NATrySelectCamera(attempt + 1); });
+}
+
+static void (*NAOrigLiveAppear)(id, SEL, BOOL) = NULL;
+
+static void NALiveAppear(id self, SEL _cmd, BOOL animated) {
+    if (NAOrigLiveAppear) NAOrigLiveAppear(self, _cmd, animated);
+    if (gLaunchCover) {
+        NA_LOG(@"直播页已出现, 撤遮罩");
+        NAHideLaunchCover();
+    }
 }
 
 static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
@@ -1185,6 +1209,17 @@ static void NAPatchContainers(void) {
             NAOrigHWAppear = (void (*)(id, SEL, BOOL))method_getImplementation(m);
             method_setImplementation(m, (IMP)NAHWAppear);
             NA_LOG(@"启动后进摄像头页 hook 已挂");
+        }
+    }
+
+    // 直播页真正出现就撤遮罩，不依赖定时器判断
+    Class liveVC = objc_getClass("HYCNCDeviceUniControlVC");
+    if (liveVC) {
+        Method m = class_getInstanceMethod(liveVC, sel_registerName("viewDidAppear:"));
+        if (m) {
+            NAOrigLiveAppear = (void (*)(id, SEL, BOOL))method_getImplementation(m);
+            method_setImplementation(m, (IMP)NALiveAppear);
+            NA_LOG(@"直播页出现撤遮罩 hook 已挂");
         }
     }
 
