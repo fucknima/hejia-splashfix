@@ -459,6 +459,29 @@ static NSString *NAStr(id item, NSString *key) {
     return [v isKindOfClass:[NSString class]] ? v : @"";
 }
 
+// 我的页里由低代码容器(JYMagicCube)渲染的钱包/亲情网卡片：
+// 组件字典一旦下发，JY 引擎每秒重建视图，只在视图层隐藏会留白条/闪一下，
+// 所以直接从组件数组里删掉，让宿主不创建容器。
+static BOOL NAIsDroppedMyComponent(id item) {
+    if (![item isKindOfClass:[NSDictionary class]]) return NO;
+    NSDictionary *d = item;
+    NSMutableString *s = [NSMutableString string];
+    for (id v in [d allValues]) {
+        if ([v isKindOfClass:[NSString class]]) [s appendFormat:@" %@", v];
+    }
+    if (s.length == 0) return NO;
+    BOOL wallet = NAModule(kNAWalletKey) &&
+        ([s containsString:@"我的钱包"] || [s containsString:@"DK000301"]);
+    BOOL family = NAModule(kNAFamilyKey) &&
+        ([s containsString:@"家庭圈"] || [s containsString:@"爱家亲情网"] || [s containsString:@"DK000302"]);
+    if (wallet || family) {
+        NA_SCAN("[MY-COMP-DROP] wallet=%d family=%d %s\n", wallet, family,
+                [[d description] UTF8String]);
+        return YES;
+    }
+    return NO;
+}
+
 static BOOL NAIsPromoComponent(id item) {
     if (!item) return NO;
     NSMutableString *joined = [NSMutableString stringWithFormat:@"%@ %@ %@ %@ %@ %@",
@@ -494,7 +517,7 @@ static NSArray *NAFilterComponents(id arr) {
     if (![arr isKindOfClass:[NSArray class]]) return arr;
     NSMutableArray *keep = [NSMutableArray arrayWithCapacity:[arr count]];
     for (id item in (NSArray *)arr) {
-        if (!NAIsPromoComponent(item)) [keep addObject:item];
+        if (!NAIsPromoComponent(item) && !NAIsDroppedMyComponent(item)) [keep addObject:item];
     }
     if (keep.count != [(NSArray *)arr count]) {
         NA_SCAN("[COMP-FILTER] %lu -> %lu\n",
