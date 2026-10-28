@@ -583,6 +583,9 @@ static void NACaptureCamera(id item) {
     if (![did isKindOfClass:[NSString class]] || did.length == 0) return;
     id hw = NAVal(item, @[@"type", @"hardwareType", @"deviceType", @"deviceTypeId"]);
     long hwv = [hw respondsToSelector:@selector(longValue)] ? [hw longValue] : 0;
+    // 摄像头在 HYHardwareControlURLConfig.plist 里映射到 10086 -> CNCDevice_Play；
+    // hardwareType 要用配置键（10086），不是设备 model 的 type（2320794）。
+    if ([NALooksCamera(item)] || hwv == 2320794) hwv = 10086;
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setObject:did forKey:kNACamDidKey];
     [ud setInteger:hwv forKey:kNACamHwKey];
