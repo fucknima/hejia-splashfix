@@ -583,9 +583,9 @@ static void NACaptureCamera(id item) {
     if (![did isKindOfClass:[NSString class]] || did.length == 0) return;
     id hw = NAVal(item, @[@"type", @"hardwareType", @"deviceType", @"deviceTypeId"]);
     long hwv = [hw respondsToSelector:@selector(longValue)] ? [hw longValue] : 0;
-    // 摄像头在 HYHardwareControlURLConfig.plist 里映射到 10086 -> CNCDevice_Play；
-    // hardwareType 要用配置键（10086），不是设备 model 的 type（2320794）。
-    if (NALooksCamera(item) || hwv == 2320794) hwv = 10086;
+    // 路由里的 hardwareType 会被 App 当成 deviceTypeId 去取产品模型
+    // (HYHardwareURLBridge -> getDeviceModelSilentByDeviceTypeId:)，
+    // 所以用 model 的 type（2320794），不是配置键 10086。
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setObject:did forKey:kNACamDidKey];
     [ud setInteger:hwv forKey:kNACamHwKey];
@@ -616,16 +616,22 @@ static BOOL NATopIsLive(void) {
     return [cn containsString:@"UniControl"];
 }
 
-static BOOL NAOpenCameraRoute(void) {
+// deviceClass: 0 = 不带该参数（走 hardwareType 取产品模型的分支）
+//             1 = 平台设备类型 1，App 查表得 khDeviceType=1（IPC 摄像头），khSDKType=0x10000
+static BOOL NAOpenCameraRoute(long deviceClass) {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSString *did = [ud stringForKey:kNACamDidKey];
     long hw = (long)[ud integerForKey:kNACamHwKey];
     if (did.length == 0) return NO;
     NSString *enc = [did stringByAddingPercentEncodingWithAllowedCharacters:
                      [NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *str = [NSString stringWithFormat:
-        @"cmcc://digitalhome/Hardware/CNCDevice_Play?playType=0&hardwareType=%ld&iotDeviceId=%@&time=0",
-        hw, enc ?: did];
+    NSString *str = deviceClass > 0
+        ? [NSString stringWithFormat:
+           @"cmcc://digitalhome/Hardware/CNCDevice_Play?playType=0&hardwareType=%ld&iotDeviceId=%@&deviceClass=%ld&time=0",
+           hw, enc ?: did, deviceClass]
+        : [NSString stringWithFormat:
+           @"cmcc://digitalhome/Hardware/CNCDevice_Play?playType=0&hardwareType=%ld&iotDeviceId=%@&time=0",
+           hw, enc ?: did];
     NSURL *url = [NSURL URLWithString:str];
     id app = [UIApplication sharedApplication];
     id delegate = [app delegate];
@@ -1019,20 +1025,32 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
         NAShowLaunchCover();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            if (NAOpenCameraRoute()) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+            // 路由链路（静态分析已确认）：
+            //   AppDelegate openURL -> HYHardwareModule -> HYHardwareURLBridge openKHUrl:
+            //   -> openKhUrl:query:withParams:khSDKType:khDeviceType:device:
+            //   -> fetchKhDevice:deviceIdOrSN:sdkType: -> HYCNCDeviceUniControlVC
+            // 有 deviceClass 时走 khDeviceType 分支（1=IPC）；没有则按 hardwareType 取产品模型。
+            NAOpenCameraRoute(1);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (NATopIsLive()) {
+                    NA_LOG(@"路由已进入直播页 (deviceClass=1)");
+                    NAHideLaunchCover();
+                    return;
+                }
+                NA_LOG(@"deviceClass=1 没进直播, 试 hardwareType 分支");
+                NAOpenCameraRoute(0);
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
                                dispatch_get_main_queue(), ^{
                     if (NATopIsLive()) {
-                        NA_LOG(@"路由已进入直播页");
+                        NA_LOG(@"路由已进入直播页 (hardwareType)");
                         NAHideLaunchCover();
                     } else {
-                        NA_LOG(@"路由没到直播页, 回退 cell 选中");
+                        NA_LOG(@"两条路由都没到直播页, 回退 cell 选中");
                         NATrySelectCamera(0);
                     }
                 });
-            } else {
-                NATrySelectCamera(0);
-            }
+            });
         });
     });
 }

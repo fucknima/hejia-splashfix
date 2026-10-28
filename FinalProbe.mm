@@ -273,6 +273,32 @@ static BOOL fp_playOpen(id self, SEL _cmd, id url) {
 }
 
 // ---------------------------------------------------------------------------
+// 真实分发类 HYHardwareURLBridge（类方法）
+//   + openKHUrl:withTarget:withParams:                     入口
+//   + openKhUrl:query:withParams:khSDKType:khDeviceType:device:   参数已解析
+//   + getDeviceVCWithType:pageType:model:                  真正造 VC
+// ---------------------------------------------------------------------------
+static BOOL (*fp_orig_khOpen)(id, SEL, id, id, id);
+static BOOL fp_khOpen(id self, SEL _cmd, id url, id target, id params) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
+        @"HYHardwareURLBridge openKHUrl=%@\n params=%@", u, FPTrim(params)]);
+    BOOL r = fp_orig_khOpen ? fp_orig_khOpen(self, _cmd, url, target, params) : NO;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareURLBridge openKHUrl -> %d", r]);
+    return r;
+}
+
+static id (*fp_orig_khOpen2)(id, SEL, id, id, id, long long, long long, id);
+static id fp_khOpen2(id self, SEL _cmd, id url, id query, id params,
+                     long long sdkType, long long devType, id device) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
+        @"openKhUrl query=%@\n sdkType=%lld devType=%lld device=%@\n params=%@\n url=%@",
+        FPTrim(query), sdkType, devType, FPTrim(device), FPTrim(params), u]);
+    return fp_orig_khOpen2 ? fp_orig_khOpen2(self, _cmd, url, query, params, sdkType, devType, device) : nil;
+}
+
+// ---------------------------------------------------------------------------
 // 我的页组件 / 视图树
 // ---------------------------------------------------------------------------
 static void (*fp_orig_myComp)(id, SEL, id, id, id, id);
@@ -408,6 +434,21 @@ static void HTFinalProbeInit(void) {
             if (m) {
                 fp_orig_playOpen = (BOOL (*)(id, SEL, id))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_playOpen);
+            }
+        }
+
+        Class bridge = objc_getClass("HYHardwareURLBridge");
+        if (bridge) {
+            Method m = class_getClassMethod(bridge, sel_registerName("openKHUrl:withTarget:withParams:"));
+            if (m) {
+                fp_orig_khOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_khOpen);
+            }
+            m = class_getClassMethod(bridge, sel_registerName(
+                "openKhUrl:query:withParams:khSDKType:khDeviceType:device:"));
+            if (m) {
+                fp_orig_khOpen2 = (id (*)(id, SEL, id, id, id, long long, long long, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_khOpen2);
             }
         }
 
