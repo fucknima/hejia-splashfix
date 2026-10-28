@@ -57,34 +57,42 @@ static void FPWrite(NSString *section, NSString *body) {
 static NSString *FPDumpObj(id obj, int depth) {
     if (!obj) return @"nil";
     NSMutableString *s = [NSMutableString string];
-    @try {
-        [s appendFormat:@"class=%@ desc=%@", NSStringFromClass([obj class]), FPTrim(obj)];
+    Class c = [obj class];
+    NSString *cn = NSStringFromClass(c);
+    [s appendFormat:@"class=%@ desc=%@", cn, FPTrim(obj)];
 
-        unsigned int n = 0;
-        Ivar *ivars = class_copyIvarList([obj class], &n);
-        for (unsigned int i = 0; i < n; i++) {
-            const char *tn = ivar_getTypeEncoding(ivars[i]);
-            if (!tn || tn[0] != '@') continue;
-            @try {
-                id v = object_getIvar(obj, ivars[i]);
-                if (v) [s appendFormat:@"\n  ivar %s = %@", ivar_getName(ivars[i]), FPDumpObj(v, depth - 1)];
-            } @catch (__unused NSException *e) {}
+    // 视图/控制器/集合只给类名和描述，绝不 KVC（会提前触发 loadView 崩溃）
+    if ([obj isKindOfClass:[UIView class]] || [obj isKindOfClass:[UIViewController class]] ||
+        [obj isKindOfClass:[NSArray class]] || [obj isKindOfClass:[NSSet class]]) {
+        return s;
+    }
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        NSDictionary *d = obj;
+        NSUInteger i = 0;
+        for (id key in d) {
+            if (i++ > 40) break;
+            [s appendFormat:@"\n  %@ = %@", FPTrim(key), FPTrim(d[key])];
         }
-        free(ivars);
-
-        unsigned int pn = 0;
-        objc_property_t *props = class_copyPropertyList([obj class], &pn);
-        for (unsigned int i = 0; i < pn; i++) {
-            const char *pname = property_getName(props[i]);
-            if (!pname) continue;
-            @try {
-                id v = [obj valueForKey:[NSString stringWithUTF8String:pname]];
-                if (v) [s appendFormat:@"\n  prop %s = %@", pname,
-                        (depth > 0 ? FPDumpObj(v, depth - 1) : FPTrim(v))];
-            } @catch (__unused NSException *e) {}
-        }
-        free(props);
-    } @catch (__unused NSException *e) {}
+        return s;
+    }
+    // 只对 model/adapter/data 这类做 ivar 反射，且只看对象型 ivar
+    if (!([cn containsString:@"Model"] || [cn containsString:@"Adapter"] ||
+          [cn containsString:@"Data"] || [cn containsString:@"Info"] ||
+          [cn containsString:@"Item"])) {
+        return s;
+    }
+    if (depth <= 0) return s;
+    unsigned int n = 0;
+    Ivar *ivars = class_copyIvarList(c, &n);
+    for (unsigned int i = 0; i < n; i++) {
+        const char *tn = ivar_getTypeEncoding(ivars[i]);
+        if (!tn || tn[0] != '@') continue;
+        @try {
+            id v = object_getIvar(obj, ivars[i]);
+            if (v) [s appendFormat:@"\n  ivar %s = %@", ivar_getName(ivars[i]), FPDumpObj(v, depth - 1)];
+        } @catch (__unused NSException *e) {}
+    }
+    free(ivars);
     return s;
 }
 
@@ -195,7 +203,12 @@ static void fp_push(id self, SEL _cmd, UIViewController *vc, BOOL animated) {
     NSString *cn = NSStringFromClass([vc class]);
     if ([cn containsString:@"UniControl"] || [cn containsString:@"Play"] || [cn containsString:@"Live"]) {
         NSMutableString *out = [NSMutableString string];
-        [out appendFormat:@"pushed=%@\n%@\nstack=%@", cn, FPDumpObj(vc, 1),
+        [out appendFormat:@"pushed=%@\n", cn];
+        @try {
+            id kh = [vc valueForKey:@"khDevice"];
+            if (kh) [out appendFormat:@"khDevice=%@\n", FPDumpObj(kh, 1)];
+        } @catch (__unused NSException *e) {}
+        [out appendFormat:@"stack=%@",
             [self isKindOfClass:[UINavigationController class]] ? FPStack((UINavigationController *)self) : @"?"];
         FPWrite(@"PUSH", out);
 
