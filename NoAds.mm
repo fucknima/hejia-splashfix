@@ -879,12 +879,22 @@ static void NASweepAds(void) {
                        ([t isEqualToString:@"爱家亲情网"] && NAModule(kNAFamilyKey))) {
                 CGFloat winW = v.window ? v.window.bounds.size.width : 402.0;
                 UIView *cur = v;
+                UIView *target = nil;
                 while (cur && cur != cur.window) {
                     if (cur.bounds.size.width >= winW * 0.8 && cur.bounds.size.height >= 80) {
-                        cur.hidden = YES;
+                        target = cur;
                         break;
                     }
                     cur = cur.superview;
+                }
+                if (target) {
+                    target.hidden = YES;
+                    UIView *parent = target.superview;
+                    if (parent && fabs(parent.bounds.size.width - target.bounds.size.width) < 2 &&
+                        fabs(parent.bounds.size.height - target.bounds.size.height) < 2) {
+                        parent.hidden = YES;
+                    }
+                    NA_SCAN("[MY-CARD] hidden %s\n", [NSStringFromClass([target class]) UTF8String]);
                 }
             }
         });
@@ -1007,7 +1017,7 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             if (NAOpenCameraRoute()) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
                                dispatch_get_main_queue(), ^{
                     if (NATopIsLive()) {
                         NA_LOG(@"路由已进入直播页");
