@@ -241,6 +241,38 @@ static BOOL fp_openURL(id self, SEL _cmd, id app, id url, id options) {
 }
 
 // ---------------------------------------------------------------------------
+// 路由分发链
+// ---------------------------------------------------------------------------
+static BOOL (*fp_orig_hwOpen)(id, SEL, id, id, id);
+static BOOL fp_hwOpen(id self, SEL _cmd, id url, id target, id params) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
+        @"HYHardwareModule openUrl=%@\n target=%@\n params=%@", u, FPTrim(target), FPTrim(params)]);
+    BOOL r = fp_orig_hwOpen ? fp_orig_hwOpen(self, _cmd, url, target, params) : NO;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYHardwareModule -> %d", r]);
+    return r;
+}
+
+static BOOL (*fp_orig_navOpen)(id, SEL, id, id, id);
+static BOOL fp_navOpen(id self, SEL _cmd, id url, id target, id params) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:
+        @"HYURLNavigator openUrl=%@\n target=%@\n params=%@", u, FPTrim(target), FPTrim(params)]);
+    BOOL r = fp_orig_navOpen ? fp_orig_navOpen(self, _cmd, url, target, params) : NO;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYURLNavigator -> %d", r]);
+    return r;
+}
+
+static BOOL (*fp_orig_playOpen)(id, SEL, id);
+static BOOL fp_playOpen(id self, SEL _cmd, id url) {
+    NSString *u = [url isKindOfClass:[NSURL class]] ? [(NSURL *)url absoluteString] : FPTrim(url);
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYCNCDevicePlayVC openURL=%@", u]);
+    BOOL r = fp_orig_playOpen ? fp_orig_playOpen(self, _cmd, url) : NO;
+    FPWrite(@"ROUTE-DISPATCH", [NSString stringWithFormat:@"HYCNCDevicePlayVC -> %d", r]);
+    return r;
+}
+
+// ---------------------------------------------------------------------------
 // 我的页组件 / 视图树
 // ---------------------------------------------------------------------------
 static void (*fp_orig_myComp)(id, SEL, id, id, id, id);
@@ -351,6 +383,31 @@ static void HTFinalProbeInit(void) {
             if (m) {
                 fp_orig_push = (void (*)(id, SEL, UIViewController *, BOOL))method_getImplementation(m);
                 method_setImplementation(m, (IMP)fp_push);
+            }
+        }
+
+        Class hwMod = objc_getClass("HYHardwareModule");
+        if (hwMod) {
+            Method m = class_getInstanceMethod(hwMod, sel_registerName("openUrl:withTarget:withParams:"));
+            if (m) {
+                fp_orig_hwOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_hwOpen);
+            }
+        }
+        Class urlNav = objc_getClass("HYURLNavigator");
+        if (urlNav) {
+            Method m = class_getInstanceMethod(urlNav, sel_registerName("openUrl:withTarget:withParams:"));
+            if (m) {
+                fp_orig_navOpen = (BOOL (*)(id, SEL, id, id, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_navOpen);
+            }
+        }
+        Class playVC = objc_getClass("HYCNCDevicePlayVC");
+        if (playVC) {
+            Method m = class_getInstanceMethod(playVC, sel_registerName("openURL:"));
+            if (m) {
+                fp_orig_playOpen = (BOOL (*)(id, SEL, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)fp_playOpen);
             }
         }
 
