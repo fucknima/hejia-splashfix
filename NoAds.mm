@@ -672,21 +672,6 @@ static BOOL NAOpenCameraRoute(long deviceClass) {
     return r != nil;
 }
 
-// 兜底入口：模拟系统把 URL 交给 AppDelegate
-static void NAOpenCameraRouteViaApp(long deviceClass) {
-    NSString *str = NACameraRouteURL(deviceClass);
-    if (!str) return;
-    NSURL *url = [NSURL URLWithString:str];
-    id app = [UIApplication sharedApplication];
-    id delegate = [app delegate];
-    SEL sel = sel_registerName("application:openURL:options:");
-    if (!delegate || ![delegate respondsToSelector:sel]) return;
-    BOOL (*fn)(id, SEL, id, id, id) = (BOOL (*)(id, SEL, id, id, id))[delegate methodForSelector:sel];
-    if (!fn) return;
-    BOOL ok = fn(delegate, sel, app, url, @{});
-    NA_LOG(@"路由直播(appdelegate): %@ -> %d", str, ok);
-}
-
 // 记录以“第一个摄像头”为准：NADeviceList 里调用
 static BOOL NAIsPromoDevice(id item) {
     NSString *cn = NSStringFromClass([item class]).lowercaseString;
@@ -1068,38 +1053,17 @@ static void NAHWAppear(id self, SEL _cmd, BOOL animated) {
         NAShowLaunchCover();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            // 直接调 App 自己的摄像头路由入口，再按 deviceClass=1 / 无 deviceClass 两种参数各试一次，
-            // 最后才用 AppDelegate 兜底，都失败才回退 cell。
+            // 真路由：+[HYHardwareURLBridge openKHUrl:...]，deviceClass=1 -> khDeviceType=1 (IPC)
             NAOpenCameraRoute(1);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                 if (NATopIsLive()) {
-                    NA_LOG(@"路由已进入直播页 (deviceClass=1)");
+                    NA_LOG(@"路由已进入直播页");
                     NAHideLaunchCover();
-                    return;
+                } else {
+                    NA_LOG(@"路由没到直播页, 回退 cell 选中");
+                    NATrySelectCamera(0);
                 }
-                NA_LOG(@"deviceClass=1 没进直播, 试 hardwareType 分支");
-                NAOpenCameraRoute(0);
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{
-                    if (NATopIsLive()) {
-                        NA_LOG(@"路由已进入直播页 (hardwareType)");
-                        NAHideLaunchCover();
-                        return;
-                    }
-                    NA_LOG(@"bridge 两次都没进, 试 AppDelegate 入口");
-                    NAOpenCameraRouteViaApp(1);
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-                                   dispatch_get_main_queue(), ^{
-                        if (NATopIsLive()) {
-                            NA_LOG(@"路由已进入直播页 (appdelegate)");
-                            NAHideLaunchCover();
-                        } else {
-                            NA_LOG(@"全部路由没到直播页, 回退 cell 选中");
-                            NATrySelectCamera(0);
-                        }
-                    });
-                });
             });
         });
     });
